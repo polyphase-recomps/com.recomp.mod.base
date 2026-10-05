@@ -41,8 +41,8 @@ when the URL is reachable). The editor builds it before the runtime and links th
 changing this package, **restart the editor**: addons that depend on it are not reloaded
 when it changes.
 
-Working on several recomp projects? `Tools/sync_modbase.ps1` copies this package into the
-other projects' `Packages/` (the known ones by default, or `-Projects path1, path2`).
+Working on several recomp projects? Clone this repository into each project's `Packages/`
+and keep them current with `git pull`.
 
 ## For game authors
 
@@ -308,4 +308,3 @@ The existing providers:
 | `ModBaseEditor.*` | Tools > Recomp > Mods windows, ModMap inspector, Create Asset item |
 | `ModBaseLua.*` | `Recomp` and `Mods` tables |
 | `Tools/check_addon.ps1` | Compile check outside the editor |
-| `Tools/sync_modbase.ps1` | Copy into the other recomp projects |
