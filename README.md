@@ -180,7 +180,10 @@ All are in the Add Node list. Their bindings are inspector properties (category
 
   The selected button gets a border (**Highlight Color / Width**).
 - **`RecompBar`**: **Variable** against **Max Variable**.
-- **`RecompMenuController`**: put it inside a UI's root. Properties:
+- **`RecompMenuController`**: put it in a UI's root, next to the panel it shows and hides.
+  Keep the root visible: Polyphase widgets don't tick while hidden, so a controller inside
+  the widget it hides could never open it again. Properties:
+  - **Panel** (the widget shown/hidden; empty = the sibling named `Panel`, else the parent);
   - **Title**;
   - **Start Visible**;
   - **Capture Input** (gamepad navigation; the game gets nothing; B closes);

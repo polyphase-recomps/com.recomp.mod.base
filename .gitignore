@@ -5,3 +5,9 @@ build/
 *.pdb
 *.exp
 *.ilk
+
+# editor-generated project files
+.vscode/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user

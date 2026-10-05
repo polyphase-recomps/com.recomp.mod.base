@@ -557,16 +557,27 @@ Button* FirstButtonIn(Node* node)
 }
 }
 
+// The panel property, else the sibling named "Panel", else the parent (older UIs).
 Widget* RecompMenuController::Target()
 {
+    if (Widget* panel = mPanel.Get()) return panel;
     Node* parent = GetParent();
-    return parent ? parent->As<Widget>() : nullptr;
+    if (parent == nullptr) return nullptr;
+    for (uint32_t i = 0; i < parent->GetNumChildren(); ++i)
+    {
+        Node* sibling = parent->GetChild((int32_t)i);
+        if (sibling != this && sibling->GetName() == "Panel")
+        {
+            if (Widget* w = sibling->As<Widget>()) return w;
+        }
+    }
+    return parent->As<Widget>();
 }
 
 bool RecompMenuController::TargetVisible()
 {
     Widget* target = Target();
-    return target != nullptr && target->IsVisible();
+    return target != nullptr && target->IsVisible(true);
 }
 
 void RecompMenuController::Start()
@@ -663,6 +674,11 @@ void RecompMenuController::SetCloseAction(const std::string& action)
     mCloseAction = action;
 }
 
+void RecompMenuController::SetPanel(Node* panel)
+{
+    mPanel = ResolveWeakPtr<Widget>(panel);
+}
+
 const std::vector<RecompMenuController*>& RecompMenuController::GetAll()
 {
     return Controllers();
@@ -696,7 +712,14 @@ void RecompMenuController::Tick(float deltaTime)
         }
         if (!mBoundVariable.empty()) how += (how.empty() ? "" : ", ") + std::string("variable ") + mBoundVariable;
         if (mInHomeMenu) how += (how.empty() ? "" : ", ") + std::string("the HOME menu");
-        LogDebug("Recomp menu '%s': opens with %s", mTitle.c_str(), how.empty() ? "scripts only" : how.c_str());
+        Widget* shown = Target();
+        LogDebug("Recomp menu '%s': opens with %s (shows '%s')", mTitle.c_str(), how.empty() ? "scripts only" : how.c_str(),
+                 shown ? shown->GetName().c_str() : "nothing");
+        if (shown != nullptr && shown == GetParent())
+        {
+            LogWarning("Recomp menu '%s': it hides its own parent, so it stops ticking and can't reopen it. "
+                       "Set its Panel property to a sibling widget.", mTitle.c_str());
+        }
     }
     const bool togglePressed = (mToggleButton >= 0 && INP_IsGamepadButtonJustDown(mToggleButton, 0)) ||
                                (!mToggleAction.empty() && RecompActionJustPressed(mToggleAction));
@@ -785,6 +808,7 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Start Visible", this, &mStartVisible));
     outProps.push_back(Property(DatumType::Bool, "Capture Input", this, &mCaptureInput));
     outProps.push_back(Property(DatumType::Node, "First Button", this, &mFirstButton));
+    outProps.push_back(Property(DatumType::Node, "Panel", this, &mPanel));
     outProps.push_back(Property(DatumType::Integer, "Toggle Button", this, &mToggleButton));
     outProps.push_back(Property(DatumType::String, "Toggle Action", this, &mToggleAction));
     outProps.push_back(Property(DatumType::String, "Close Action", this, &mCloseAction));

@@ -416,6 +416,10 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     // "Open with" is chosen in the dialog each time, so it applies on Update too
     if (controller != nullptr)
     {
+        // the controller hides the panel, never the root: hidden widgets don't tick, so
+        // the root (and the controller in it) must stay visible to see the open button
+        controller->SetPanel(panel);
+        root->SetVisible(true);
         controller->SetToggleButton(options.toggleButton);
         controller->SetToggleAction(options.toggleAction);
     }

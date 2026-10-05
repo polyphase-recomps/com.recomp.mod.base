@@ -8,8 +8,10 @@
  *                The selected button gets a border, so gamepad focus is easy to see.
  *  RecompBar     ProgressBar showing a variable against a maximum.
  *  RecompMenuController
- *                Put one inside a UI's root. Whenever that root is visible and the UI is
- *                interactive, it gets the gamepad: a button is selected for navigation,
+ *                Put one in a UI's root, next to the panel it shows/hides (Panel property,
+ *                default: the sibling named "Panel"). The root must stay visible: hidden
+ *                widgets don't tick. While the panel is visible it gets the gamepad: a
+ *                button is selected for navigation,
  *                the game gets no input (Recomp_IsInputCaptured), and B closes the UI.
  *                Toggle Button (a gamepad button) and/or Toggle Action (a PlayerInput
  *                action, "Category/Name") open and close it; both are logged at start.
@@ -140,6 +142,10 @@ public:
     // only closes it (B always closes).
     void SetToggleAction(const std::string& action);
     void SetCloseAction(const std::string& action);
+    // The widget shown/hidden. Empty: a sibling named "Panel", else the parent. Keep the
+    // controller outside it: hidden widgets don't tick, so a controller inside the widget
+    // it hides can't open it again.
+    void SetPanel(Node* panel);
 
     static const std::vector<RecompMenuController*>& GetAll();
     static bool IsCapturingInput();
@@ -153,6 +159,7 @@ protected:
     bool mStartVisible = false;
     bool mCaptureInput = true;
     WeakPtr<Button> mFirstButton;
+    WeakPtr<Widget> mPanel;
     int32_t mToggleButton = -1;
     std::string mToggleAction;
     std::string mCloseAction;
