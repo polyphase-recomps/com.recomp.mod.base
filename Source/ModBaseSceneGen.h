@@ -9,7 +9,8 @@
  *   Action           a button
  *   Display, Bar     text / a bar (read only)
  * A RecompMenuController makes it a gamepad menu: hidden at start, opened by its toggle
- * button (default Select) or the HOME menu, B closes it.
+ * button (default Select), a PlayerInput action or the HOME menu, B closes it. The
+ * "Open with" choice is applied on every run, also when updating an existing scene.
  *
  * Saved as Packages/<game>/Assets/Scenes/<scene name>.oct. Running it again updates
  * that scene without touching what is already there (nodes are matched by name):
@@ -29,6 +30,7 @@ struct ModSceneOptions
     int position = 0;          // 0 centre, 1 left, 2 right
     bool includeDisplay = true;
     int toggleButton = -1;     // GamepadButtonCode, -1 = none (HOME menu / scripts only)
+    std::string toggleAction;  // PlayerInput action "Category/Name", "" = none
 };
 
 #if EDITOR

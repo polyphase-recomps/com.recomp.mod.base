@@ -11,6 +11,8 @@
  *                Put one inside a UI's root. Whenever that root is visible and the UI is
  *                interactive, it gets the gamepad: a button is selected for navigation,
  *                the game gets no input (Recomp_IsInputCaptured), and B closes the UI.
+ *                Toggle Button (a gamepad button) and/or Toggle Action (a PlayerInput
+ *                action, "Category/Name") open and close it; both are logged at start.
  *
  * Format tokens (RecompText, RecompButton labels, RecompFormat for C++ users):
  *   {name}          a game variable (number or text)
@@ -40,6 +42,11 @@
 MODBASE_API std::string RecompFormat(const std::string& format, bool* missing = nullptr);
 // True while a game runs and publishes variables (any runtime).
 MODBASE_API bool RecompIsLive();
+// The project's PlayerInput actions as "Category/Name" (empty on engines that don't export
+// PlayerInputSystem), and whether one was just pressed ("Category/Name" or just "Name").
+MODBASE_API std::vector<std::string> RecompInputActions();
+MODBASE_API bool RecompActionJustPressed(const std::string& action);
+MODBASE_API const char* RecompGamepadButtonName(int32_t gamepadButton);
 
 class MODBASE_API RecompText : public Text
 {
@@ -129,6 +136,10 @@ public:
     void SetBoundVariable(const std::string& name);
     void SetInHomeMenu(bool inHomeMenu);
     void SetToggleButton(int32_t gamepadButton);
+    // PlayerInput action ("Category/Name" or "Name") that opens/closes the UI, and one that
+    // only closes it (B always closes).
+    void SetToggleAction(const std::string& action);
+    void SetCloseAction(const std::string& action);
 
     static const std::vector<RecompMenuController*>& GetAll();
     static bool IsCapturingInput();
@@ -143,6 +154,9 @@ protected:
     bool mCaptureInput = true;
     WeakPtr<Button> mFirstButton;
     int32_t mToggleButton = -1;
+    std::string mToggleAction;
+    std::string mCloseAction;
+    bool mLoggedSetup = false;
     bool mInHomeMenu = true;
     std::string mBoundVariable;
     bool mWasVisible = false;

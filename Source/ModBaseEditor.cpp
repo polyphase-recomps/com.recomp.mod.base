@@ -40,6 +40,9 @@
 #include <windows.h>
 #endif
 
+// ModBaseWidgets.h (not included here: it pulls in the widget headers)
+MODBASE_API std::vector<std::string> RecompInputActions();
+
 namespace
 {
 EditorUIHooks* sHooks = nullptr;
@@ -762,7 +765,49 @@ void DrawModMapEditor(void*)
 
 // ---- Generate scene ------------------------------------------------------------------------
 const int kToggleCodes[] = {-1, GAMEPAD_SELECT, GAMEPAD_THUMBR, GAMEPAD_THUMBL, GAMEPAD_Z};
-const char* kToggleNames = "None (HOME menu / scripts)\0Select\0Right stick click\0Left stick click\0Z\0";
+const char* const kToggleNames[] = {"None (HOME menu / scripts)", "Select", "Right stick click", "Left stick click", "Z"};
+const int kToggleCount = (int)(sizeof(kToggleCodes) / sizeof(kToggleCodes[0]));
+std::string sToggleAction; // a PlayerInput action instead of a button ("" = use sToggleChoice)
+
+// "Open with": the gamepad buttons, then the project's PlayerInput actions (when the engine
+// exports PlayerInputSystem and the project has actions).
+void DrawOpenWith()
+{
+    const std::string preview = !sToggleAction.empty() ? "Action: " + sToggleAction
+                                                       : kToggleNames[std::max(0, std::min(sToggleChoice, kToggleCount - 1))];
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Open with", preview.c_str()))
+    {
+        for (int i = 0; i < kToggleCount; ++i)
+        {
+            if (ImGui::Selectable(kToggleNames[i], sToggleAction.empty() && sToggleChoice == i))
+            {
+                sToggleChoice = i;
+                sToggleAction.clear();
+            }
+        }
+        const std::vector<std::string> actions = RecompInputActions();
+        ImGui::Separator();
+        if (actions.empty())
+        {
+            ImGui::TextDisabled("No PlayerInput actions (needs project input actions and an engine that exports them)");
+        }
+        for (const std::string& a : actions)
+        {
+            if (ImGui::Selectable(("Action: " + a).c_str(), sToggleAction == a))
+            {
+                sToggleAction = a;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Gamepad buttons are read from controller 1 (Select = Back on XInput).\n"
+                          "An action uses its PlayerInput bindings, so keyboard keys work too.\n"
+                          "Play logs \"Recomp menu '<title>': opens with ...\" when the menu is in the scene.");
+    }
+}
 
 bool DrawGenerate(void*)
 {
@@ -793,8 +838,7 @@ bool DrawGenerate(void*)
     ImGui::InputText("Scene", sSceneName, sizeof(sSceneName));
     ImGui::SetNextItemWidth(160.0f);
     ImGui::Combo("Position", &sSceneOptions.position, "Centre\0Top left\0Top right\0");
-    ImGui::SetNextItemWidth(220.0f);
-    ImGui::Combo("Open with", &sToggleChoice, kToggleNames);
+    DrawOpenWith();
     ImGui::Checkbox("Include Display settings (resolution scaler)", &sSceneOptions.includeDisplay);
     ImGui::TextDisabled("Saved in Packages/%s/Assets/Scenes. Generating again updates it: nodes you changed stay.",
                         map->mGame.c_str());
@@ -809,7 +853,8 @@ bool DrawGenerate(void*)
     {
         if (map->GetDirtyFlag()) SaveMap(map);
         sSceneOptions.sceneName = sSceneName;
-        sSceneOptions.toggleButton = kToggleCodes[std::max(0, std::min(sToggleChoice, 4))];
+        sSceneOptions.toggleButton = sToggleAction.empty() ? kToggleCodes[std::max(0, std::min(sToggleChoice, kToggleCount - 1))] : -1;
+        sSceneOptions.toggleAction = sToggleAction;
         ModScene_Generate(map, sSceneOptions, sSceneMessage);
     }
     ImGui::SameLine();

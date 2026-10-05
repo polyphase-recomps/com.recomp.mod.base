@@ -185,9 +185,17 @@ All are in the Add Node list. Their bindings are inspector properties (category
   - **Start Visible**;
   - **Capture Input** (gamepad navigation; the game gets nothing; B closes);
   - **First Button**;
-  - **Toggle Button** (a gamepad button code);
+  - **Toggle Button** (a gamepad button code, controller 1; Select is Back on XInput);
+  - **Toggle Action** / **Close Action** (a PlayerInput action, `Category/Name` or just
+    `Name`; keyboard bindings work too. Needs an engine that exports `PlayerInputSystem`,
+    i.e. defines `POLYPHASE_PLAYER_INPUT_EXPORTED`);
   - **In HOME Menu**;
   - **Bound Variable** (shown while a game variable is non-zero, e.g. a pause flag).
+
+  On play it logs `Recomp menu '<title>': opens with ...`, then `opened` / `closed` on each
+  toggle. No such line means the UI isn't in the running scene. The Generate dialog's
+  **Open with** lists the gamepad buttons and the project's input actions, and is applied
+  on every run, including Update of an existing scene.
 
 `Source/ModBaseUiBuilder.h` has the non-destructive builder the generator uses (`Ensure`,
 `Group`, `Label`, `Bound`, `SettingButton`, `LinkNavigation`, `RootCanvas`) for your own

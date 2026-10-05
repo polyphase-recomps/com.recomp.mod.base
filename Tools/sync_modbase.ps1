@@ -25,8 +25,8 @@ foreach ($project in $Projects) {
     }
     $dest = Join-Path $packages 'com.recomp.mod.base'
     if ((Resolve-Path $packages).Path -eq (Resolve-Path (Join-Path $package '..')).Path) { continue }
-    # mirror, without build output
-    & robocopy $package $dest /MIR /XD build .git /NFL /NDL /NJH /NJS /NP | Out-Null
+    # mirror, without build output, git data or the editor's generated project files
+    & robocopy $package $dest /MIR /XD build .git .vscode /XF *.vcxproj *.vcxproj.filters *.vcxproj.user /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE) for $dest" }
     Write-Host "synced: $dest"
 }

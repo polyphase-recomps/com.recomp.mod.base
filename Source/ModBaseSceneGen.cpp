@@ -408,12 +408,17 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     }
 
     // controller
-    b.Ensure<RecompMenuController>(root.Get(), "MenuController", [&](RecompMenuController* c) {
+    RecompMenuController* controller = b.Ensure<RecompMenuController>(root.Get(), "MenuController", [&](RecompMenuController* c) {
         Place(c, 0.0f, 0.0f, 0.0f, 0.0f);
         c->Setup(map->mTitle.empty() ? std::string("Mod Settings") : map->mTitle, false, true,
                  tabButtons.empty() ? nullptr : tabButtons.front());
-        c->SetToggleButton(options.toggleButton);
     });
+    // "Open with" is chosen in the dialog each time, so it applies on Update too
+    if (controller != nullptr)
+    {
+        controller->SetToggleButton(options.toggleButton);
+        controller->SetToggleAction(options.toggleAction);
+    }
 
     // rows of entries no longer in the map: reported, not deleted (they may be the user's)
     std::vector<std::string> stale;

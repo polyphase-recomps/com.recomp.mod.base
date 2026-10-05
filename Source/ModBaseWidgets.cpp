@@ -11,6 +11,9 @@
 #include "Log.h"
 #include "Input/Input.h"
 #include "Nodes/Widgets/Quad.h"
+#if __has_include("Input/PlayerInputSystem.h")
+#include "Input/PlayerInputSystem.h"
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -469,6 +472,58 @@ void RecompBar::SetVariables(const std::string& variable, const std::string& max
     mMaxVariable = maxVariable;
 }
 
+// ---- input actions -----------------------------------------------------------------------
+std::vector<std::string> RecompInputActions()
+{
+    std::vector<std::string> out;
+#if defined(POLYPHASE_PLAYER_INPUT_EXPORTED)
+    if (PlayerInputSystem* input = PlayerInputSystem::Get())
+    {
+        for (const InputAction& a : input->GetActions())
+        {
+            out.push_back(a.category.empty() ? a.name : a.category + "/" + a.name);
+        }
+    }
+#endif
+    return out;
+}
+
+bool RecompActionJustPressed(const std::string& action)
+{
+#if defined(POLYPHASE_PLAYER_INPUT_EXPORTED)
+    PlayerInputSystem* input = PlayerInputSystem::Get();
+    if (input == nullptr || action.empty()) return false;
+    const size_t slash = action.find('/');
+    if (slash != std::string::npos)
+    {
+        return input->WasActionJustActivated(action.substr(0, slash), action.substr(slash + 1));
+    }
+    for (const InputAction& a : input->GetActions())
+    {
+        if (a.name == action && input->WasActionJustActivated(a.category, a.name)) return true;
+    }
+#else
+    (void)action;
+#endif
+    return false;
+}
+
+const char* RecompGamepadButtonName(int32_t gamepadButton)
+{
+    static const struct { int32_t code; const char* name; } kNames[] = {
+        {GAMEPAD_SELECT, "Select"}, {GAMEPAD_START, "Start"}, {GAMEPAD_HOME, "Home"},
+        {GAMEPAD_THUMBR, "Right stick click"}, {GAMEPAD_THUMBL, "Left stick click"},
+        {GAMEPAD_Z, "Z"}, {GAMEPAD_A, "A"}, {GAMEPAD_B, "B"}, {GAMEPAD_X, "X"}, {GAMEPAD_Y, "Y"},
+        {GAMEPAD_L1, "L1"}, {GAMEPAD_R1, "R1"}, {GAMEPAD_L2, "L2"}, {GAMEPAD_R2, "R2"},
+    };
+    if (gamepadButton < 0) return "none";
+    for (const auto& n : kNames)
+    {
+        if (n.code == gamepadButton) return n.name;
+    }
+    return "button";
+}
+
 // ---- RecompMenuController ----------------------------------------------------------------
 namespace
 {
@@ -523,6 +578,7 @@ void RecompMenuController::Start()
         all.push_back(this);
     }
     mWasVisible = false;
+    mLoggedSetup = false;
     if (Widget* target = Target())
     {
         target->SetVisible(mStartVisible);
@@ -597,6 +653,16 @@ void RecompMenuController::SetToggleButton(int32_t gamepadButton)
     mToggleButton = gamepadButton;
 }
 
+void RecompMenuController::SetToggleAction(const std::string& action)
+{
+    mToggleAction = action;
+}
+
+void RecompMenuController::SetCloseAction(const std::string& action)
+{
+    mCloseAction = action;
+}
+
 const std::vector<RecompMenuController*>& RecompMenuController::GetAll()
 {
     return Controllers();
@@ -614,9 +680,30 @@ bool RecompMenuController::IsCapturingInput()
 void RecompMenuController::Tick(float deltaTime)
 {
     Widget::Tick(deltaTime);
-    if (mToggleButton >= 0 && INP_IsGamepadButtonJustDown(mToggleButton, 0))
+    if (!mLoggedSetup)
+    {
+        // says in the log that the UI is in the running scene and what opens it
+        mLoggedSetup = true;
+        std::string how;
+        if (mToggleButton >= 0) how = std::string("gamepad ") + RecompGamepadButtonName(mToggleButton);
+        if (!mToggleAction.empty())
+        {
+            how += how.empty() ? "" : ", ";
+            how += "action '" + mToggleAction + "'";
+#if !defined(POLYPHASE_PLAYER_INPUT_EXPORTED)
+            how += " (needs an engine that exports PlayerInputSystem)";
+#endif
+        }
+        if (!mBoundVariable.empty()) how += (how.empty() ? "" : ", ") + std::string("variable ") + mBoundVariable;
+        if (mInHomeMenu) how += (how.empty() ? "" : ", ") + std::string("the HOME menu");
+        LogDebug("Recomp menu '%s': opens with %s", mTitle.c_str(), how.empty() ? "scripts only" : how.c_str());
+    }
+    const bool togglePressed = (mToggleButton >= 0 && INP_IsGamepadButtonJustDown(mToggleButton, 0)) ||
+                               (!mToggleAction.empty() && RecompActionJustPressed(mToggleAction));
+    if (togglePressed)
     {
         Toggle();
+        LogDebug("Recomp menu '%s': %s", mTitle.c_str(), IsOpen() ? "opened" : "closed");
     }
 
     Widget* target = Target();
@@ -646,9 +733,11 @@ void RecompMenuController::Tick(float deltaTime)
         return;
     }
     if (INP_IsGamepadButtonJustDown(GAMEPAD_B, 0) ||
-        (!mBoundVariable.empty() && INP_IsGamepadButtonJustDown(GAMEPAD_START, 0)))
+        (!mBoundVariable.empty() && INP_IsGamepadButtonJustDown(GAMEPAD_START, 0)) ||
+        (!mCloseAction.empty() && RecompActionJustPressed(mCloseAction)))
     {
         Close();
+        LogDebug("Recomp menu '%s': closed", mTitle.c_str());
         return;
     }
     if (mSelectPending && INP_IsGamepadButtonDown(GAMEPAD_A, 0))
@@ -697,6 +786,8 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Capture Input", this, &mCaptureInput));
     outProps.push_back(Property(DatumType::Node, "First Button", this, &mFirstButton));
     outProps.push_back(Property(DatumType::Integer, "Toggle Button", this, &mToggleButton));
+    outProps.push_back(Property(DatumType::String, "Toggle Action", this, &mToggleAction));
+    outProps.push_back(Property(DatumType::String, "Close Action", this, &mCloseAction));
     outProps.push_back(Property(DatumType::Bool, "In HOME Menu", this, &mInHomeMenu));
     outProps.push_back(Property(DatumType::String, "Bound Variable", this, &mBoundVariable));
 }
