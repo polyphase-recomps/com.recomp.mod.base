@@ -1,0 +1,7 @@
+# build output (Tools/check_addon.ps1, editor builds)
+build/
+*.dll
+*.lib
+*.pdb
+*.exp
+*.ilk

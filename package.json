@@ -1,0 +1,17 @@
+{
+    "name": "com.recomp.mod.base",
+    "author": "",
+    "displayName": "Recomp Mod Base",
+    "description": "Mod layer shared by the recomp runtimes (PS1, GameCube, N64, GBA): mod maps, end-user mod settings, generated settings UI, resolution scaler, Recomp/Mods Lua",
+    "version": "1.0.0",
+    "native": {
+        "target": "engine",
+        "sourceDir": "Source",
+        "binaryName": "com.recomp.mod.base",
+        "entrySymbol": "PolyphasePlugin_GetDesc",
+        "apiVersion": 3,
+        "resolveMode": "source",
+        "exportDefine": "MODBASE_EXPORTS",
+        "binaries": []
+    }
+}

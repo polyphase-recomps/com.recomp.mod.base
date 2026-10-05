@@ -1,0 +1,151 @@
+/**
+ * @file ModBaseWidgets.h
+ * @brief UI widgets bound to the running game (any recomp runtime) and to mod settings.
+ *
+ *  RecompText    Text with a format: "HP {hp}/{hp_max}", "Attack x{@cheat_atkmul}".
+ *  RecompButton  A Button that changes a mod setting (Setting + Direction), sends a game
+ *                request, toggles a variable or steps it. Its label can be a format too.
+ *                The selected button gets a border, so gamepad focus is easy to see.
+ *  RecompBar     ProgressBar showing a variable against a maximum.
+ *  RecompMenuController
+ *                Put one inside a UI's root. Whenever that root is visible and the UI is
+ *                interactive, it gets the gamepad: a button is selected for navigation,
+ *                the game gets no input (Recomp_IsInputCaptured), and B closes the UI.
+ *
+ * Format tokens (RecompText, RecompButton labels, RecompFormat for C++ users):
+ *   {name}          a game variable (number or text)
+ *   {name[3]}       element 3 of an array variable
+ *   {name>table}    the variable's value used as an index into another variable
+ *   {name:02}       numbers zero-padded to 2 digits
+ *   {name?yes|no}   "yes" when the variable is non-zero, else "no"
+ *   {@id}           a mod setting's value as shown in menus ("ON", "Fit", "3")
+ *   {@id.label}     a mod setting's label
+ *   {{ / }}         literal braces
+ * Unresolved tokens show as "--" (the game publishes its variables once it reaches its
+ * main loop). With no game running the widgets keep what the editor shows.
+ */
+#pragma once
+
+#include "ModBaseApi.h"
+
+#include "Nodes/Widgets/Button.h"
+#include "Nodes/Widgets/ProgressBar.h"
+#include "Nodes/Widgets/Text.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+// Expands the tokens above. `missing` is set when a token couldn't be resolved.
+MODBASE_API std::string RecompFormat(const std::string& format, bool* missing = nullptr);
+// True while a game runs and publishes variables (any runtime).
+MODBASE_API bool RecompIsLive();
+
+class MODBASE_API RecompText : public Text
+{
+public:
+    DECLARE_NODE(RecompText, Text);
+
+    virtual void Tick(float deltaTime) override;
+    virtual void GatherProperties(std::vector<Property>& outProps) override;
+
+    void SetFormat(const std::string& format);
+    void SetHideIfMissing(bool hide);
+
+protected:
+    std::string mFormat;
+    bool mHideIfMissing = false;
+};
+
+class MODBASE_API RecompButton : public Button
+{
+public:
+    DECLARE_NODE(RecompButton, Button);
+
+    virtual void Activate() override;
+    virtual void Tick(float deltaTime) override;
+    virtual void GatherProperties(std::vector<Property>& outProps) override;
+
+    // Setting mode: Direction +1 steps up / toggles / next choice / runs an action,
+    // -1 steps down / previous choice.
+    void SetSetting(const std::string& id, int32_t direction = 1);
+    // Request mode: comma-separated integer arguments.
+    void SetRequest(const std::string& request, const std::string& arguments = "");
+    void SetToggle(const std::string& variable, int32_t onValue = 1);
+    void SetStep(const std::string& variable, int32_t step, int32_t minValue, int32_t maxValue);
+    void SetLabelFormat(const std::string& format);
+
+protected:
+    std::string mSetting;
+    int32_t mDirection = 1;
+    std::string mRequest;
+    std::string mArguments;
+    std::string mToggleVariable;
+    int32_t mToggleOnValue = 1;
+    std::string mVariable;
+    int32_t mStep = 1;
+    int32_t mMin = 0;
+    int32_t mMax = 10;
+    std::string mLabelFormat;
+    glm::vec4 mHighlightColor = {1.0f, 0.8f, 0.2f, 1.0f};
+    float mHighlightWidth = 3.0f;
+    bool mHighlighted = false;
+    int32_t mPending = 0;
+};
+
+class MODBASE_API RecompBar : public ProgressBar
+{
+public:
+    DECLARE_NODE(RecompBar, ProgressBar);
+
+    virtual void Tick(float deltaTime) override;
+    virtual void GatherProperties(std::vector<Property>& outProps) override;
+
+    void SetVariables(const std::string& variable, const std::string& maxVariable);
+
+protected:
+    std::string mVariable;
+    std::string mMaxVariable;
+};
+
+class MODBASE_API RecompMenuController : public Widget
+{
+public:
+    DECLARE_NODE(RecompMenuController, Widget);
+
+    virtual void Start() override;
+    virtual void Stop() override;
+    virtual void Destroy() override;
+    virtual void Tick(float deltaTime) override;
+    virtual void GatherProperties(std::vector<Property>& outProps) override;
+
+    void Open();
+    void Close();
+    void Toggle();
+    bool IsOpen() const;
+    bool IsInHomeMenu() const;
+    const std::string& GetTitle() const;
+    void Setup(const std::string& title, bool startVisible, bool captureInput, Node* firstButton);
+    void SetBoundVariable(const std::string& name);
+    void SetInHomeMenu(bool inHomeMenu);
+    void SetToggleButton(int32_t gamepadButton);
+
+    static const std::vector<RecompMenuController*>& GetAll();
+    static bool IsCapturingInput();
+
+protected:
+    Widget* Target();
+    bool TargetVisible();
+    void SyncBoundVariable();
+
+    std::string mTitle = "Menu";
+    bool mStartVisible = false;
+    bool mCaptureInput = true;
+    WeakPtr<Button> mFirstButton;
+    int32_t mToggleButton = -1;
+    bool mInHomeMenu = true;
+    std::string mBoundVariable;
+    bool mWasVisible = false;
+    bool mSelectPending = false;
+    bool mBoundOn = false;
+};

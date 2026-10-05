@@ -1,0 +1,1070 @@
+/**
+ * @file ModBaseEditor.cpp
+ * @brief Tools > Recomp > Mods windows (see ModBaseEditor.h).
+ */
+
+#include "ModBaseEditor.h"
+
+#if EDITOR
+
+#include "ModBaseDisplay.h"
+#include "ModBaseImport.h"
+#include "ModBaseModMap.h"
+#include "ModBaseProvider.h"
+#include "ModBaseSceneGen.h"
+#include "ModBaseSettings.h"
+
+#include "AssetDir.h"
+#include "AssetManager.h"
+#include "Editor/EditorUtils.h"
+#include "Engine.h"
+#include "Input/InputTypes.h"
+#include "Log.h"
+#include "Plugins/EditorUIHooks.h"
+
+#include "imgui.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+namespace
+{
+EditorUIHooks* sHooks = nullptr;
+uint64_t sHookId = 0;
+
+const char* kEditorWindow = "recomp.mods.editor";
+const char* kLiveWindow = "recomp.mods.live";
+const char* kDisplayWindow = "recomp.mods.display";
+const char* kGenerateWindow = "recomp.mods.generate";
+const char* kGenerateModal = "Generate Mod Settings Scene";
+
+// OpenModal is a newer hook: older engines get a dockable window instead
+#if defined(POLYPHASE_EDITOR_HOOKS_HAS_MODALS)
+#define MODBASE_HAS_MODALS 1
+#else
+#define MODBASE_HAS_MODALS 0
+#endif
+
+const ImVec4 kGood(0.45f, 0.85f, 0.45f, 1.0f);
+const ImVec4 kWarn(1.0f, 0.7f, 0.3f, 1.0f);
+const ImVec4 kBad(1.0f, 0.5f, 0.4f, 1.0f);
+
+// ---- state ------------------------------------------------------------------------------
+std::string sMapName;          // the map open in the editor
+int sSelected = -1;            // selected entry
+std::string sStatus;           // last action's message
+ImVec4 sStatusColor = kGood;
+
+std::vector<ModImportCandidate> sCandidates;
+char sImportFilter[64] = "";
+int sImportSource = 0;         // 0 live, 1 sources
+
+char sNewName[64] = "";
+int sNewGame = 0;
+
+ModSceneOptions sSceneOptions;
+char sSceneName[96] = "";
+int sToggleChoice = 1;
+std::string sSceneMessage;
+
+char sLiveFilter[64] = "";
+std::vector<std::string> sLiveEdit;
+std::vector<std::string> sRequestArgs;
+std::vector<int> sRequestIds;
+
+void SetStatus(const std::string& text, ImVec4 color = kGood)
+{
+    sStatus = text;
+    sStatusColor = color;
+}
+
+ModMap* CurrentMap()
+{
+    if (sMapName.empty()) return nullptr;
+    return LoadAsset<ModMap>(sMapName);
+}
+
+void MarkDirty(ModMap* map)
+{
+    if (map != nullptr) map->SetDirtyFlag();
+}
+
+bool InputString(const char* label, std::string& value, float width = -1.0f)
+{
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s", value.c_str());
+    if (width != 0.0f) ImGui::SetNextItemWidth(width);
+    if (ImGui::InputText(label, buf, sizeof(buf)))
+    {
+        value = buf;
+        return true;
+    }
+    return false;
+}
+
+bool ContainsNoCase(const std::string& text, const char* filter)
+{
+    if (filter == nullptr || filter[0] == 0) return true;
+    std::string a = text, b = filter;
+    std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+    std::transform(b.begin(), b.end(), b.begin(), ::tolower);
+    return a.find(b) != std::string::npos;
+}
+
+// ---- game packages ----------------------------------------------------------------------
+struct GamePackage
+{
+    std::string id;
+    std::string title;
+    std::string runtime;
+    std::string dir; // ...\Packages\<id>\ (trailing slash)
+};
+
+bool ReadText(const std::string& path, std::string& text)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    text = buffer.str();
+    return true;
+}
+
+std::string JsonString(const std::string& text, const char* key)
+{
+    const std::string quoted = std::string("\"") + key + "\"";
+    size_t p = text.find(quoted);
+    if (p == std::string::npos) return std::string();
+    p = text.find(':', p + quoted.size());
+    if (p == std::string::npos) return std::string();
+    p = text.find('"', p);
+    if (p == std::string::npos) return std::string();
+    const size_t e = text.find('"', p + 1);
+    return e == std::string::npos ? std::string() : text.substr(p + 1, e - p - 1);
+}
+
+std::vector<GamePackage> FindGamePackages()
+{
+    std::vector<GamePackage> games;
+#if defined(_WIN32)
+    const std::string packages = GetEngineState()->mProjectDirectory + "Packages\\";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((packages + "*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return games;
+    do
+    {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.') continue;
+        const std::string dir = packages + fd.cFileName + "\\";
+        std::string json;
+        if (!ReadText(dir + "Assets\\game.json", json)) continue;
+        GamePackage g;
+        g.id = fd.cFileName;
+        g.dir = dir;
+        g.title = JsonString(json, "title");
+        if (g.title.empty()) g.title = g.id;
+        std::string pkg;
+        ReadText(dir + "package.json", pkg);
+        const std::string all = pkg + json;
+        if (all.find("com.recomp.ps1") != std::string::npos) g.runtime = "ps1";
+        else if (all.find("com.recomp.gcn") != std::string::npos) g.runtime = "gcn";
+        else if (all.find("com.recomp.gba") != std::string::npos) g.runtime = "gba";
+        else if (all.find("com.recomp.n64") != std::string::npos) g.runtime = "n64";
+        games.push_back(g);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#endif
+    return games;
+}
+
+std::string PackageDir(const std::string& game)
+{
+    return GetEngineState()->mProjectDirectory + "Packages\\" + game + "\\";
+}
+
+AssetDir* PackageAssetDir(const std::string& game, const char* sub)
+{
+    AssetManager* am = AssetManager::Get();
+    AssetDir* project = am ? am->FindProjectDirectory() : nullptr;
+    AssetDir* packages = (project && project->mParentDir) ? project->mParentDir->GetSubdirectory("Packages") : nullptr;
+    AssetDir* dir = packages ? packages->GetSubdirectory(game) : nullptr;
+    if (dir == nullptr) dir = project;
+    if (dir == nullptr) return nullptr;
+    AssetDir* child = dir->GetSubdirectory(sub);
+    return child ? child : dir->CreateSubdirectory(sub);
+}
+
+void SaveMap(ModMap* map)
+{
+    if (map == nullptr) return;
+    AssetStub* stub = FetchAssetStub(map->GetName());
+    if (stub == nullptr)
+    {
+        SetStatus("Cannot find the asset of " + map->GetName(), kBad);
+        return;
+    }
+    AssetManager::Get()->SaveAsset(*stub);
+    SetStatus("Saved " + map->GetName());
+}
+
+ModMap* CreateMap(const std::string& name, AssetDir* dir, const GamePackage* game)
+{
+    if (dir == nullptr)
+    {
+        SetStatus("No folder to create the Mod Map in.", kBad);
+        return nullptr;
+    }
+    AssetStub* stub = EditorAddUniqueAsset(name.c_str(), dir, ModMap::GetStaticType(), true);
+    ModMap* map = (stub && stub->mAsset) ? stub->mAsset->As<ModMap>() : nullptr;
+    if (map == nullptr)
+    {
+        SetStatus("Cannot create the Mod Map asset.", kBad);
+        return nullptr;
+    }
+    if (game != nullptr)
+    {
+        map->mGame = game->id;
+        map->mRuntime = game->runtime;
+        map->mTitle = game->title + " Mods";
+    }
+    AssetManager::Get()->SaveAsset(*stub);
+    sMapName = stub->mName;
+    sSelected = -1;
+    SetStatus("Created " + stub->mName);
+    return map;
+}
+
+// ---- Mod Map Editor ----------------------------------------------------------------------
+void DrawEntryDetails(ModMap* map, ModEntry& e)
+{
+    bool changed = false;
+    changed |= InputString("Id", e.mId, 260.0f);
+    changed |= InputString("Label", e.mLabel, 260.0f);
+
+    // group: a combo of the map's groups, or a new name
+    std::vector<std::string> groups = map->OrderedGroups();
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::BeginCombo("##groupcombo", e.mGroup.empty() ? "(none)" : e.mGroup.c_str()))
+    {
+        for (const std::string& g : groups)
+        {
+            if (ImGui::Selectable(g.empty() ? "(none)" : g.c_str(), g == e.mGroup))
+            {
+                e.mGroup = g;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    changed |= InputString("Group", e.mGroup, 100.0f);
+    changed |= InputString("Help", e.mHelp, 360.0f);
+
+    int kind = (int)e.mKind;
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::Combo("Widget", &kind, "Toggle\0Int\0Float\0Choice\0Action\0Display\0Bar\0"))
+    {
+        e.mKind = (ModKind)kind;
+        changed = true;
+    }
+    int source = (int)e.mSource;
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::Combo("Source", &source, "Variable\0Address\0Symbol\0Request\0Startup Option\0Display\0"))
+    {
+        e.mSource = (ModSource)source;
+        changed = true;
+    }
+
+    switch (e.mSource)
+    {
+    case ModSource::Variable:
+        changed |= InputString("Variable", e.mName, 220.0f);
+        ImGui::SetNextItemWidth(100.0f);
+        changed |= ImGui::InputInt("Index", &e.mIndex);
+        break;
+    case ModSource::Address:
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)e.mAddress);
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::InputText("Address", buf, sizeof(buf)))
+        {
+            e.mAddress = strtoull(buf, nullptr, 0);
+            changed = true;
+        }
+    }
+        // fall through to the type
+    case ModSource::Symbol:
+    {
+        if (e.mSource == ModSource::Symbol) changed |= InputString("Symbol", e.mName, 220.0f);
+        int type = (int)e.mType;
+        ImGui::SetNextItemWidth(100.0f);
+        if (ImGui::Combo("Type", &type, "u8\0s8\0u16\0s16\0u32\0s32\0f32\0"))
+        {
+            e.mType = (RecompType)type;
+            changed = true;
+        }
+        break;
+    }
+    case ModSource::Request:
+        changed |= InputString("Request", e.mName, 220.0f);
+        changed |= InputString("Arguments", e.mArgs, 160.0f);
+        break;
+    case ModSource::StartupOption:
+        changed |= InputString("Option", e.mName, 220.0f);
+        break;
+    case ModSource::Display:
+        changed |= InputString("Setting", e.mName, 220.0f);
+        break;
+    default:
+        break;
+    }
+
+    if (e.mKind == ModKind::Int || e.mKind == ModKind::Float || e.mKind == ModKind::Toggle)
+    {
+        ImGui::SetNextItemWidth(260.0f);
+        float range[3] = {e.mMin, e.mMax, e.mStep};
+        if (ImGui::InputFloat3("Min / Max / Step", range))
+        {
+            e.mMin = range[0];
+            e.mMax = range[1];
+            e.mStep = range[2];
+            changed = true;
+        }
+    }
+    if (e.mKind != ModKind::Action && e.mKind != ModKind::Display && e.mKind != ModKind::Bar)
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        changed |= ImGui::InputFloat("Default", &e.mDefault);
+    }
+    if (e.mKind == ModKind::Choice)
+    {
+        ImGui::TextUnformatted("Choices");
+        e.mChoiceValues.resize(e.mChoiceLabels.size());
+        for (size_t i = 0; i < e.mChoiceLabels.size(); ++i)
+        {
+            ImGui::PushID((int)i);
+            changed |= InputString("##label", e.mChoiceLabels[i], 160.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            changed |= ImGui::InputFloat("##value", &e.mChoiceValues[i]);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x"))
+            {
+                e.mChoiceLabels.erase(e.mChoiceLabels.begin() + i);
+                e.mChoiceValues.erase(e.mChoiceValues.begin() + i);
+                changed = true;
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+        }
+        if (ImGui::SmallButton("+ Choice"))
+        {
+            e.mChoiceLabels.push_back("Choice " + std::to_string(e.mChoiceLabels.size()));
+            e.mChoiceValues.push_back((float)e.mChoiceValues.size());
+            changed = true;
+        }
+    }
+    if (e.mKind == ModKind::Display)
+    {
+        changed |= InputString("Format", e.mFormat, 260.0f);
+        ImGui::TextDisabled("{v} = the value; other {tokens} work too, e.g. {hp}/{hp_max}");
+    }
+    if (e.mKind == ModKind::Bar)
+    {
+        changed |= InputString("Max Variable", e.mMaxName, 220.0f);
+    }
+    changed |= ImGui::Checkbox("Save with the user's settings", &e.mPersist);
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("Lock", &e.mLock);
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Re-applies the user's value whenever the game changes it (cheats).");
+    }
+
+    // live value
+    RecompProvider* provider = Recomp_FindProvider(map->mGame.c_str());
+    if (provider != nullptr && provider->IsLive() && ModSettings::Get().GetMap() == map)
+    {
+        ImGui::TextColored(kGood, "Live: %s", ModSettings::Get().ValueText(e.mId).c_str());
+    }
+    if (changed) MarkDirty(map);
+}
+
+void DrawImportPopup(ModMap* map)
+{
+    if (!ImGui::BeginPopupModal("Import##mods", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        return;
+    }
+    ImGui::RadioButton("Running game", &sImportSource, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Game sources (no game needed)", &sImportSource, 1);
+    ImGui::SameLine();
+    if (ImGui::Button("Scan"))
+    {
+        sCandidates = sImportSource == 0 ? ModImport_FromLive(Recomp_FindProvider(map->mGame.c_str()))
+                                         : ModImport_FromSources(PackageDir(map->mGame));
+        for (ModImportCandidate& c : sCandidates)
+        {
+            c.selected = map->Find(c.name) == nullptr && c.name.compare(0, 6, "cheat_") == 0;
+        }
+        if (sCandidates.empty())
+        {
+            SetStatus(sImportSource == 0 ? "No game running (or it publishes nothing yet)."
+                                         : "Nothing found in Packages/" + map->mGame + "/Native.",
+                      kWarn);
+        }
+    }
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Filter", sImportFilter, sizeof(sImportFilter));
+    ImGui::SameLine();
+    if (ImGui::SmallButton("All")) for (auto& c : sCandidates) if (ContainsNoCase(c.name, sImportFilter)) c.selected = true;
+    ImGui::SameLine();
+    if (ImGui::SmallButton("None")) for (auto& c : sCandidates) c.selected = false;
+
+    if (ImGui::BeginTable("##candidates", 5, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders,
+                          ImVec2(760.0f, 340.0f)))
+    {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24.0f);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+        ImGui::TableSetupColumn("Kind", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Help", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+        ImGui::TableHeadersRow();
+        for (size_t i = 0; i < sCandidates.size(); ++i)
+        {
+            ModImportCandidate& c = sCandidates[i];
+            if (!ContainsNoCase(c.name + " " + c.help, sImportFilter)) continue;
+            ImGui::TableNextRow();
+            ImGui::PushID((int)i);
+            ImGui::TableNextColumn();
+            ImGui::Checkbox("##sel", &c.selected);
+            ImGui::TableNextColumn();
+            const bool exists = map->Find(c.name) != nullptr;
+            if (exists) ImGui::TextDisabled("%s", c.name.c_str());
+            else ImGui::TextUnformatted(c.name.c_str());
+            ImGui::TableNextColumn();
+            const char* what = c.what == ModImportCandidate::What::Request ? "request"
+                               : c.what == ModImportCandidate::What::Option ? "option"
+                                                                             : Recomp_TypeName(c.type);
+            ImGui::Text("%s%s", what, c.count > 1 ? " []" : "");
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(exists ? "(already in the map)" : c.help.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", c.origin.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (ImGui::Button("Add selected", ImVec2(140, 0)))
+    {
+        int added = 0;
+        for (const ModImportCandidate& c : sCandidates)
+        {
+            if (!c.selected || map->Find(c.name) != nullptr) continue;
+            map->mEntries.push_back(ModImport_MakeEntry(c));
+            const std::string& g = map->mEntries.back().mGroup;
+            if (std::find(map->mGroups.begin(), map->mGroups.end(), g) == map->mGroups.end()) map->mGroups.push_back(g);
+            ++added;
+        }
+        MarkDirty(map);
+        SetStatus("Added " + std::to_string(added) + " entries. Check their widget kinds and ranges, then Save.");
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void DrawNewMapPopup()
+{
+    if (!ImGui::BeginPopupModal("New Mod Map##mods", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        return;
+    }
+    static std::vector<GamePackage> games;
+    if (ImGui::IsWindowAppearing()) games = FindGamePackages();
+    if (games.empty())
+    {
+        ImGui::TextColored(kWarn, "No game package (Packages/<id>/Assets/game.json) in this project.");
+    }
+    else
+    {
+        sNewGame = std::min(sNewGame, (int)games.size() - 1);
+        ImGui::SetNextItemWidth(300.0f);
+        if (ImGui::BeginCombo("Game", games[sNewGame].title.c_str()))
+        {
+            for (int i = 0; i < (int)games.size(); ++i)
+            {
+                if (ImGui::Selectable((games[i].title + "  (" + games[i].id + ")").c_str(), i == sNewGame)) sNewGame = i;
+            }
+            ImGui::EndCombo();
+        }
+        if (sNewName[0] == 0 || ImGui::IsWindowAppearing())
+        {
+            std::string name = "MM_";
+            for (char c : games[sNewGame].title) if (isalnum((unsigned char)c)) name += c;
+            snprintf(sNewName, sizeof(sNewName), "%s", name.c_str());
+        }
+        ImGui::SetNextItemWidth(300.0f);
+        ImGui::InputText("Name", sNewName, sizeof(sNewName));
+        ImGui::TextDisabled("Saved in Packages/%s/Assets/ModMaps", games[sNewGame].id.c_str());
+        if (ImGui::Button("Create", ImVec2(120, 0)))
+        {
+            CreateMap(sNewName, PackageAssetDir(games[sNewGame].id, "ModMaps"), &games[sNewGame]);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+    }
+    if (ImGui::Button("Cancel", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void Validate(ModMap* map)
+{
+    std::vector<std::string> problems;
+    std::vector<std::string> ids;
+    RecompProvider* provider = Recomp_FindProvider(map->mGame.c_str());
+    const bool live = provider != nullptr && provider->IsLive();
+    std::vector<RecompVarInfo> vars;
+    std::vector<RecompRequestInfo> requests;
+    std::vector<ModImportCandidate> scanned;
+    if (live)
+    {
+        provider->Variables(vars);
+        provider->Requests(requests);
+    }
+    else
+    {
+        scanned = ModImport_FromSources(PackageDir(map->mGame));
+    }
+    auto known = [&](const std::string& name, bool request) {
+        if (live)
+        {
+            if (request)
+            {
+                for (auto& r : requests) if (r.name == name) return true;
+                return name.compare(0, 4, "set ") == 0;
+            }
+            for (auto& v : vars) if (v.name == name) return true;
+            return false;
+        }
+        for (auto& c : scanned)
+        {
+            if (c.name == name && (c.what == ModImportCandidate::What::Request) == request) return true;
+        }
+        return false;
+    };
+    for (const ModEntry& e : map->mEntries)
+    {
+        if (e.mId.empty()) problems.push_back("an entry has no id");
+        if (std::find(ids.begin(), ids.end(), e.mId) != ids.end()) problems.push_back("duplicate id " + e.mId);
+        ids.push_back(e.mId);
+        if (e.mSource == ModSource::Variable && !known(e.mName, false))
+            problems.push_back(e.mId + ": no variable " + e.mName);
+        if (e.mSource == ModSource::Request && !known(e.mName, true))
+            problems.push_back(e.mId + ": no request " + e.mName);
+        if (e.mKind == ModKind::Choice && e.mChoiceLabels.empty()) problems.push_back(e.mId + ": no choices");
+        if ((e.mKind == ModKind::Int || e.mKind == ModKind::Float) && e.mMax <= e.mMin)
+            problems.push_back(e.mId + ": max is not above min");
+    }
+    if (problems.empty())
+    {
+        SetStatus(std::string("No problems found (checked against ") + (live ? "the running game" : "the game sources") + ").");
+    }
+    else
+    {
+        std::string text = std::to_string(problems.size()) + " problem(s): ";
+        for (size_t i = 0; i < problems.size() && i < 8; ++i) text += (i ? "; " : "") + problems[i];
+        SetStatus(text, kWarn);
+    }
+}
+
+void OpenGenerate(const std::string& mapName);
+
+void DrawModMapEditor(void*)
+{
+    // map picker
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty())
+    {
+        map = maps.front();
+        sMapName = map->GetName();
+    }
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            const std::string label = m->GetName() + "  (" + m->mGame + ")";
+            if (ImGui::Selectable(label.c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                sSelected = -1;
+                map = m;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("New...")) ImGui::OpenPopup("New Mod Map##mods");
+    DrawNewMapPopup();
+    if (map == nullptr)
+    {
+        ImGui::TextWrapped("No Mod Map yet. New... creates one for a game package; Import then fills it from the "
+                           "running game or the game's sources.");
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save")) SaveMap(map);
+    ImGui::SameLine();
+    if (ImGui::Button("Import...")) ImGui::OpenPopup("Import##mods");
+    ImGui::SameLine();
+    if (ImGui::Button("Validate")) Validate(map);
+    ImGui::SameLine();
+    if (ImGui::Button("Generate Scene...")) OpenGenerate(map->GetName());
+    if (map->GetDirtyFlag())
+    {
+        ImGui::SameLine();
+        ImGui::TextColored(kWarn, "(unsaved)");
+    }
+    DrawImportPopup(map);
+
+    bool changed = false;
+    if (ImGui::CollapsingHeader("Map", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Game: %s   Runtime: %s", map->mGame.c_str(), map->mRuntime.empty() ? "?" : map->mRuntime.c_str());
+        changed |= InputString("Title", map->mTitle, 260.0f);
+        changed |= InputString("Save Name", map->mSaveName, 160.0f);
+        ImGui::SameLine();
+        ImGui::TextDisabled("file: %s.mods", map->SaveName().c_str());
+    }
+    if (changed) MarkDirty(map);
+
+    // entries: list on the left, details on the right
+    ImGui::Separator();
+    ImGui::BeginChild("##entries", ImVec2(280.0f, 0.0f), true);
+    if (ImGui::SmallButton("+ Add"))
+    {
+        ModEntry e;
+        e.mId = "setting" + std::to_string(map->mEntries.size() + 1);
+        e.mLabel = "New Setting";
+        e.mGroup = map->mGroups.empty() ? std::string("Settings") : map->mGroups.front();
+        map->mEntries.push_back(e);
+        sSelected = (int)map->mEntries.size() - 1;
+        MarkDirty(map);
+    }
+    const bool valid = sSelected >= 0 && sSelected < (int)map->mEntries.size();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Copy") && valid)
+    {
+        ModEntry e = map->mEntries[sSelected];
+        e.mId += "_copy";
+        map->mEntries.insert(map->mEntries.begin() + sSelected + 1, e);
+        ++sSelected;
+        MarkDirty(map);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Up") && valid && sSelected > 0)
+    {
+        std::swap(map->mEntries[sSelected], map->mEntries[sSelected - 1]);
+        --sSelected;
+        MarkDirty(map);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Down") && valid && sSelected + 1 < (int)map->mEntries.size())
+    {
+        std::swap(map->mEntries[sSelected], map->mEntries[sSelected + 1]);
+        ++sSelected;
+        MarkDirty(map);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Delete") && valid)
+    {
+        map->mEntries.erase(map->mEntries.begin() + sSelected);
+        sSelected = std::min(sSelected, (int)map->mEntries.size() - 1);
+        MarkDirty(map);
+    }
+    for (const std::string& group : map->OrderedGroups())
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "%s", group.empty() ? "(no group)" : group.c_str());
+        for (int i = 0; i < (int)map->mEntries.size(); ++i)
+        {
+            const ModEntry& e = map->mEntries[i];
+            if (e.mGroup != group) continue;
+            const std::string label = "  " + (e.mLabel.empty() ? e.mId : e.mLabel) + "  [" + ModKindName(e.mKind) + "]##" +
+                                      std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), i == sSelected)) sSelected = i;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##details", ImVec2(0.0f, 0.0f), true);
+    if (sSelected >= 0 && sSelected < (int)map->mEntries.size())
+    {
+        DrawEntryDetails(map, map->mEntries[sSelected]);
+    }
+    else
+    {
+        ImGui::TextDisabled("Select an entry, or Import from the game.");
+    }
+    ImGui::EndChild();
+
+    if (!sStatus.empty())
+    {
+        ImGui::TextColored(sStatusColor, "%s", sStatus.c_str());
+    }
+}
+
+// ---- Generate scene ------------------------------------------------------------------------
+const int kToggleCodes[] = {-1, GAMEPAD_SELECT, GAMEPAD_THUMBR, GAMEPAD_THUMBL, GAMEPAD_Z};
+const char* kToggleNames = "None (HOME menu / scripts)\0Select\0Right stick click\0Left stick click\0Z\0";
+
+bool DrawGenerate(void*)
+{
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty()) map = maps.front();
+    ImGui::SetNextItemWidth(300.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            if (ImGui::Selectable(m->GetName().c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                map = m;
+                snprintf(sSceneName, sizeof(sSceneName), "%s", ModScene_DefaultName(map).c_str());
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (map == nullptr)
+    {
+        ImGui::TextColored(kWarn, "Create a Mod Map first (Tools > Recomp > Mods > Mod Map Editor).");
+        return !ImGui::Button("Close");
+    }
+    if (sSceneName[0] == 0) snprintf(sSceneName, sizeof(sSceneName), "%s", ModScene_DefaultName(map).c_str());
+    ImGui::SetNextItemWidth(300.0f);
+    ImGui::InputText("Scene", sSceneName, sizeof(sSceneName));
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::Combo("Position", &sSceneOptions.position, "Centre\0Top left\0Top right\0");
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::Combo("Open with", &sToggleChoice, kToggleNames);
+    ImGui::Checkbox("Include Display settings (resolution scaler)", &sSceneOptions.includeDisplay);
+    ImGui::TextDisabled("Saved in Packages/%s/Assets/Scenes. Generating again updates it: nodes you changed stay.",
+                        map->mGame.c_str());
+    if (!sSceneMessage.empty())
+    {
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520.0f);
+        ImGui::TextWrapped("%s", sSceneMessage.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    bool keep = true;
+    if (ImGui::Button(FetchAssetStub(sSceneName) ? "Update" : "Generate", ImVec2(120, 0)))
+    {
+        if (map->GetDirtyFlag()) SaveMap(map);
+        sSceneOptions.sceneName = sSceneName;
+        sSceneOptions.toggleButton = kToggleCodes[std::max(0, std::min(sToggleChoice, 4))];
+        ModScene_Generate(map, sSceneOptions, sSceneMessage);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(100, 0))) keep = false;
+    return keep;
+}
+
+void OpenGenerate(const std::string& mapName)
+{
+    if (!mapName.empty()) sMapName = mapName;
+    sSceneMessage.clear();
+    sSceneName[0] = 0;
+#if MODBASE_HAS_MODALS
+    if (sHooks != nullptr && sHooks->OpenModal != nullptr)
+    {
+        sHooks->OpenModal(sHookId, kGenerateModal, DrawGenerate, nullptr);
+        return;
+    }
+#endif
+    if (sHooks != nullptr && sHooks->OpenWindow != nullptr)
+    {
+        sHooks->OpenWindow(kGenerateWindow);
+    }
+}
+
+// ---- Live Variables ----------------------------------------------------------------------
+void DrawLiveVariables(void*)
+{
+    RecompProvider* provider = Recomp_FindProvider();
+    if (provider == nullptr)
+    {
+        ImGui::TextWrapped("No recomp runtime is loaded.");
+        return;
+    }
+    const bool live = provider->IsLive();
+    ImGui::Text("%s  [%s]  %s", provider->GamePackage().c_str(), provider->RuntimeId(), live ? "running" : "not running");
+    if (!live)
+    {
+        ImGui::TextDisabled("Play a scene with the game's player node to see its variables.");
+        return;
+    }
+    ModMap* map = CurrentMap();
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("Filter", sLiveFilter, sizeof(sLiveFilter));
+    if (map) { ImGui::SameLine(); ImGui::TextDisabled("+ adds to %s", map->GetName().c_str()); }
+
+    std::vector<RecompVarInfo> vars;
+    provider->Variables(vars);
+    sLiveEdit.resize(vars.size());
+    if (ImGui::BeginTable("##vars", 5, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders,
+                          ImVec2(0.0f, 320.0f)))
+    {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 160.0f);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 160.0f);
+        ImGui::TableSetupColumn("Set", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+        ImGui::TableSetupColumn("Help", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        for (size_t i = 0; i < vars.size(); ++i)
+        {
+            const RecompVarInfo& v = vars[i];
+            if (!ContainsNoCase(v.name + " " + v.help, sLiveFilter)) continue;
+            ImGui::TableNextRow();
+            ImGui::PushID((int)i);
+            ImGui::TableNextColumn();
+            if (map != nullptr && map->Find(v.name) == nullptr)
+            {
+                if (ImGui::SmallButton("+"))
+                {
+                    ModImportCandidate c;
+                    c.name = v.name;
+                    c.help = v.help;
+                    c.type = v.type;
+                    c.count = v.count;
+                    map->mEntries.push_back(ModImport_MakeEntry(c));
+                    MarkDirty(map);
+                }
+                ImGui::SameLine();
+            }
+            ImGui::TextUnformatted(v.name.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s%s", Recomp_TypeName(v.type), v.count > 1 ? "[]" : "");
+            ImGui::TableNextColumn();
+            RecompValue value;
+            if (provider->Get(v.name, 0, value))
+            {
+                if (value.isText) ImGui::TextUnformatted(value.text.c_str());
+                else ImGui::Text("%.10g", value.number);
+            }
+            else
+            {
+                ImGui::TextDisabled("--");
+            }
+            ImGui::TableNextColumn();
+            if (v.writable && v.type != RecompType::Str)
+            {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%s", sLiveEdit[i].c_str());
+                ImGui::SetNextItemWidth(90.0f);
+                if (ImGui::InputText("##v", buf, sizeof(buf))) sLiveEdit[i] = buf;
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Set") && !sLiveEdit[i].empty())
+                {
+                    provider->Set(v.name, 0, RecompValue::Number(atof(sLiveEdit[i].c_str())));
+                }
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", v.help.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    std::vector<RecompRequestInfo> requests;
+    provider->Requests(requests);
+    sRequestArgs.resize(requests.size());
+    sRequestIds.resize(requests.size(), 0);
+    ImGui::TextUnformatted("Requests");
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const RecompRequestInfo& r = requests[i];
+        ImGui::PushID(1000 + (int)i);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%s", sRequestArgs[i].c_str());
+        ImGui::SetNextItemWidth(90.0f);
+        if (ImGui::InputText("##args", buf, sizeof(buf))) sRequestArgs[i] = buf;
+        ImGui::SameLine();
+        if (ImGui::SmallButton(r.name.c_str()))
+        {
+            std::vector<int> args;
+            std::istringstream in(sRequestArgs[i]);
+            std::string word;
+            while (std::getline(in, word, ','))
+            {
+                if (!word.empty()) args.push_back((int)strtol(word.c_str(), nullptr, 0));
+            }
+            sRequestIds[i] = provider->Request(r.name, args);
+        }
+        int result = 0;
+        ImGui::SameLine();
+        if (sRequestIds[i] != 0 && provider->Result(sRequestIds[i], result))
+        {
+            ImGui::TextColored(result < 0 ? kWarn : kGood, "-> %d", result);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", r.help.c_str());
+        ImGui::PopID();
+    }
+}
+
+// ---- Display settings ----------------------------------------------------------------------
+void DrawDisplaySettings(void*)
+{
+    ModSettings& settings = ModSettings::Get();
+    for (const char* id : {"display.mode", "display.scale", "display.filter", "display.window"})
+    {
+        const ModEntry* e = settings.FindEntry(id);
+        if (e == nullptr) continue;
+        float value = 0.0f;
+        settings.GetValue(id, value);
+        ImGui::PushID(id);
+        ImGui::SetNextItemWidth(200.0f);
+        if (e->mKind == ModKind::Choice)
+        {
+            int current = (int)value;
+            if (ImGui::BeginCombo(e->mLabel.c_str(), settings.ValueText(id).c_str()))
+            {
+                for (size_t i = 0; i < e->mChoiceLabels.size(); ++i)
+                {
+                    if (ImGui::Selectable(e->mChoiceLabels[i].c_str(), (int)i == current)) settings.SetValue(id, (float)i);
+                }
+                ImGui::EndCombo();
+            }
+        }
+        else
+        {
+            int v = (int)value;
+            if (ImGui::SliderInt(e->mLabel.c_str(), &v, (int)e->mMin, (int)e->mMax)) settings.SetValue(id, (float)v);
+        }
+        ImGui::PopID();
+    }
+    ImGui::TextDisabled("Saved with the user's mod settings. Fit keeps the game's shape; Integer gives sharp,\n"
+                        "evenly sized pixels; Native is 1:1; Full Screen stretches. Window sizes apply to\n"
+                        "packaged Windows builds (the editor keeps its own window).");
+    if (RecompProvider* provider = Recomp_FindProvider())
+    {
+        const RecompFrameInfo info = provider->FrameInfo();
+        if (info.width > 0)
+        {
+            const float vw = (float)GetEngineState()->mWindowWidth, vh = (float)GetEngineState()->mWindowHeight;
+            const RecompRect r = Recomp_DisplayFit(info.width, info.height, info.displayAspect, vw, vh, 1.0f,
+                                                   Recomp_DisplaySettings());
+            ImGui::Text("Game frame %dx%d -> %.0fx%.0f at (%.0f, %.0f) in a %.0fx%.0f screen", info.width,
+                        info.height, r.w, r.h, r.x, r.y, vw, vh);
+        }
+    }
+}
+
+// ---- inspector, create asset ---------------------------------------------------------------
+void DrawModMapInspector(void* object, void*)
+{
+    ModMap* map = static_cast<ModMap*>(object);
+    if (map == nullptr) return;
+    ImGui::Separator();
+    ImGui::Text("Game: %s  (%s)", map->mGame.c_str(), map->mRuntime.c_str());
+    ImGui::Text("%d entries in %d groups", (int)map->mEntries.size(), (int)map->OrderedGroups().size());
+    if (ImGui::Button("Open in Mod Map Editor"))
+    {
+        sMapName = map->GetName();
+        sSelected = -1;
+        if (sHooks && sHooks->OpenWindow) sHooks->OpenWindow(kEditorWindow);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Generate Scene...")) OpenGenerate(map->GetName());
+}
+
+void CreateModMapAsset(void*)
+{
+    ModMap* map = CreateMap("MM_NewMods", GetCurrentAssetDir(), nullptr);
+    if (map != nullptr && sHooks && sHooks->OpenWindow) sHooks->OpenWindow(kEditorWindow);
+}
+
+void OpenWindow(void* id)
+{
+    if (sHooks && sHooks->OpenWindow) sHooks->OpenWindow(static_cast<const char*>(id));
+}
+}
+
+void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
+{
+    sHooks = hooks;
+    sHookId = hookId;
+    if (hooks == nullptr)
+    {
+        return;
+    }
+    if (hooks->RegisterWindow != nullptr)
+    {
+        hooks->RegisterWindow(hookId, "Mod Map Editor", kEditorWindow, DrawModMapEditor, nullptr);
+        hooks->RegisterWindow(hookId, "Live Variables", kLiveWindow, DrawLiveVariables, nullptr);
+        hooks->RegisterWindow(hookId, "Display Settings", kDisplayWindow, DrawDisplaySettings, nullptr);
+#if MODBASE_HAS_MODALS
+        if (hooks->OpenModal == nullptr)
+#endif
+        {
+            hooks->RegisterWindow(hookId, kGenerateModal, kGenerateWindow,
+                                  [](void* ud) {
+                                      if (!DrawGenerate(ud) && sHooks && sHooks->CloseWindow)
+                                          sHooks->CloseWindow(kGenerateWindow);
+                                  },
+                                  nullptr);
+        }
+    }
+    if (hooks->AddMenuItem != nullptr)
+    {
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Mod Map Editor", OpenWindow, (void*)kEditorWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Generate Mod Settings Scene...",
+                           [](void*) { OpenGenerate(std::string()); }, nullptr, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Live Variables", OpenWindow, (void*)kLiveWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Display Settings", OpenWindow, (void*)kDisplayWindow, nullptr);
+    }
+    if (hooks->RegisterInspector != nullptr)
+    {
+        hooks->RegisterInspector(hookId, "ModMap", DrawModMapInspector, nullptr);
+    }
+    if (hooks->AddCreateAssetItem != nullptr)
+    {
+        hooks->AddCreateAssetItem(hookId, "Recomp/Mod Map", CreateModMapAsset, nullptr);
+    }
+}
+
+void ModBaseEditor::Unregister()
+{
+    sHooks = nullptr;
+}
+
+#else
+
+void ModBaseEditor::Register(EditorUIHooks*, uint64_t)
+{
+}
+
+void ModBaseEditor::Unregister()
+{
+}
+
+#endif
