@@ -13,7 +13,8 @@ if ($Projects.Count -eq 0) {
         "$recomp\LSD-DreamEmulator\LSD-DreamSimulator",
         "$recomp\StarFoxAdventures\Code\StarfoxAdventures",
         "$recomp\SuperSmashBros\Code\SuperSmashBros",
-        "$recomp\KH-ChainOfMemories\Code\Kingdom Hearts - Chain Of Memories"
+        "$recomp\KH-ChainOfMemories\Code\Kingdom Hearts - Chain Of Memories",
+        "$recomp\SnowboardKids2\Code\SnowboardKids2"
     )
 }
 foreach ($project in $Projects) {

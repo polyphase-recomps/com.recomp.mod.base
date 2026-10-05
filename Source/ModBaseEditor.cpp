@@ -167,21 +167,49 @@ std::vector<GamePackage> FindGamePackages()
     do
     {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.') continue;
-        const std::string dir = packages + fd.cFileName + "\\";
-        std::string json;
-        if (!ReadText(dir + "Assets\\game.json", json)) continue;
-        GamePackage g;
-        g.id = fd.cFileName;
-        g.dir = dir;
-        g.title = JsonString(json, "title");
-        if (g.title.empty()) g.title = g.id;
-        std::string pkg;
+        // A game package: it has Assets/game.json (PS1 games) or depends on a recomp
+        // runtime in package.json (N64, GameCube, GBA games need no game.json).
+        static const char* const kRuntimes[][2] = {
+            {"com.recomp.ps1", "ps1"}, {"com.recomp.gcn", "gcn"}, {"com.recomp.gba", "gba"}, {"com.recomp.n64", "n64"}};
+        const std::string id = fd.cFileName;
+        bool isRuntime = id == "com.recomp.mod.base";
+        for (const auto& r : kRuntimes) isRuntime = isRuntime || id == r[0];
+        if (isRuntime) continue;
+        const std::string dir = packages + id + "\\";
+        std::string json, pkg;
+        const bool hasGameJson = ReadText(dir + "Assets\\game.json", json);
         ReadText(dir + "package.json", pkg);
-        const std::string all = pkg + json;
-        if (all.find("com.recomp.ps1") != std::string::npos) g.runtime = "ps1";
-        else if (all.find("com.recomp.gcn") != std::string::npos) g.runtime = "gcn";
-        else if (all.find("com.recomp.gba") != std::string::npos) g.runtime = "gba";
-        else if (all.find("com.recomp.n64") != std::string::npos) g.runtime = "n64";
+        std::string deps;
+        const size_t depsAt = pkg.find("\"dependencies\"");
+        if (depsAt != std::string::npos)
+        {
+            const size_t end = pkg.find_first_of("}]", depsAt);
+            deps = pkg.substr(depsAt, end == std::string::npos ? std::string::npos : end - depsAt);
+        }
+        GamePackage g;
+        g.id = id;
+        g.dir = dir;
+        for (const auto& r : kRuntimes)
+        {
+            if (deps.find(std::string("\"") + r[0] + "\"") != std::string::npos ||
+                (hasGameJson && json.find(r[0]) != std::string::npos))
+            {
+                g.runtime = r[1];
+                break;
+            }
+        }
+        if (!hasGameJson && g.runtime.empty()) continue;
+        // title: game.json "title", else package.json "displayName", else the start of its
+        // description ("Snowboard Kids 2 (N64) compiled ..." -> "Snowboard Kids 2")
+        g.title = JsonString(json, "title");
+        if (g.title.empty()) g.title = JsonString(pkg, "displayName");
+        if (g.title.empty())
+        {
+            const std::string description = JsonString(pkg, "description");
+            const size_t cut = description.find(" (");
+            if (cut != std::string::npos && cut > 0 && cut <= 40) g.title = description.substr(0, cut);
+        }
+        if (g.title.empty()) g.title = g.id;
         games.push_back(g);
     } while (FindNextFileA(h, &fd));
     FindClose(h);
@@ -500,7 +528,8 @@ void DrawNewMapPopup()
     if (ImGui::IsWindowAppearing()) games = FindGamePackages();
     if (games.empty())
     {
-        ImGui::TextColored(kWarn, "No game package (Packages/<id>/Assets/game.json) in this project.");
+        ImGui::TextColored(kWarn, "No game package in this project (a package that depends on com.recomp.ps1, "
+                                  "com.recomp.gcn, com.recomp.gba or com.recomp.n64, or has Assets/game.json).");
     }
     else
     {
