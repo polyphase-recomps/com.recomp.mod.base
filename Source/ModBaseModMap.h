@@ -16,6 +16,9 @@
 #include "ModBaseProvider.h"
 
 #include "Asset.h"
+#include "AssetRef.h"
+
+#include "glm/glm.hpp"
 
 #include <string>
 #include <vector>
@@ -69,6 +72,37 @@ struct ModEntry
     bool mOnTitle = false;// also shown before the game publishes its variables
 };
 
+// How the generated settings scene looks (Tools > Recomp > Mods > Menu Style). Applied to
+// the scene's nodes on every Generate / Update and by the style window's Update button.
+// Defaults are the generated look.
+struct ModStyle
+{
+    enum ButtonState : uint8_t { Normal, Hovered, Pressed, Locked, StateCount };
+
+    // panel (background)
+    glm::vec4 mPanelColor = {0.04f, 0.05f, 0.08f, 0.88f}; // tint (with a texture) or fill
+    AssetRef mPanelTexture;
+    // buttons: per-state texture (empty = the Normal one, or none) and tint
+    AssetRef mButtonTextures[StateCount];
+    glm::vec4 mButtonColors[StateCount] = {
+        {0.5f, 0.5f, 0.5f, 1.0f}, {0.6f, 0.6f, 0.6f, 1.0f}, {0.4f, 0.4f, 0.4f, 1.0f}, {0.2f, 0.2f, 0.2f, 1.0f}};
+    glm::vec4 mButtonTextColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    float mButtonTextSize = 16.0f;
+    float mTabTextSize = 16.0f;
+    glm::vec4 mHighlightColor = {1.0f, 0.8f, 0.2f, 1.0f}; // border of the gamepad-selected button
+    float mHighlightWidth = 3.0f;
+    // text
+    AssetRef mFont; // empty = the engine default
+    glm::vec4 mTitleColor = {1.0f, 0.85f, 0.35f, 1.0f};
+    float mTitleSize = 20.0f;
+    glm::vec4 mLabelColor = {1.0f, 1.0f, 1.0f, 1.0f};     // labels of rows you can change
+    glm::vec4 mInfoColor = {0.65f, 0.75f, 0.9f, 1.0f};    // labels of read-only rows, the note
+    float mLabelSize = 16.0f;
+    glm::vec4 mValueColor = {1.0f, 0.85f, 0.35f, 1.0f};
+    float mValueSize = 16.0f;
+    float mNoteSize = 13.0f;
+};
+
 class MODBASE_API ModMap : public Asset
 {
 public:
@@ -89,6 +123,7 @@ public:
     std::string mSaveName; // end-user settings file name (default: from the game id)
     std::vector<std::string> mGroups; // display order of groups
     std::vector<ModEntry> mEntries;
+    ModStyle mStyle;
 
     const ModEntry* Find(const std::string& id) const;
     ModEntry* Find(const std::string& id);

@@ -23,12 +23,18 @@ namespace
 {
 using namespace RecompUi;
 
-const float kColumnW = 380.0f;
+// Sizes in UI pixels. The panel fills the screen minus kMargin, at most kMaxPanel (a
+// 640x480 Wii / GameCube screen gets 608x448; PC screens a centred 760x560 panel).
 const float kRowH = 30.0f;
 const float kRowGap = 4.0f;
-const float kPad = 14.0f;
-const float kPagesY = 82.0f;
-const int kMaxRowsPerColumn = 12;
+const float kPad = 12.0f;
+const float kGap = 6.0f;
+const float kTitleH = 24.0f;
+const float kTabW = 120.0f;
+const float kMargin = 16.0f;
+const glm::vec2 kMaxPanel = {760.0f, 560.0f};
+const float kValueW = 64.0f;
+const float kStepW = 40.0f;
 
 std::string NodeName(const std::string& text)
 {
@@ -65,46 +71,73 @@ std::string ValueFormat(const ModEntry& e)
     return f;
 }
 
-// One row; returns its buttons (left to right) for gamepad navigation.
-std::vector<Button*> MakeRow(Builder& b, Node* page, const ModEntry& e, float x, float y)
+// One row of a page's list: an ArrayWidget row as wide as the list. The label (or the
+// single button) takes the width the fixed-size parts leave, so rows follow the panel.
+// Returns the row's buttons (left to right) for gamepad navigation.
+std::vector<Button*> MakeRow(Builder& b, Node* list, const ModEntry& e)
 {
     std::vector<Button*> buttons;
     const std::string label = e.mLabel.empty() ? e.mId : e.mLabel;
     const std::string shown = label + (e.mSource == ModSource::StartupOption ? " *" : "");
-    Widget* row = Group(b, page, "Row_" + NodeName(e.mId), x, y, kColumnW - 8.0f, kRowH);
+    Widget* row = Array(b, list, "Row_" + NodeName(e.mId), true, 4.0f, 0.0f, FullWidth(kRowH), true);
     if (row == nullptr)
     {
         return buttons;
     }
-    const float w = kColumnW - 8.0f;
     switch (e.mKind)
     {
     case ModKind::Toggle:
     case ModKind::Choice:
-        buttons.push_back(SettingButton(b, row, "Button", shown + ": {@" + e.mId + "}", e.mId, 1, 0, 0, w, kRowH));
+        buttons.push_back(SettingButton(b, row, "Button", shown + ": {@" + e.mId + "}", e.mId, 1, FullWidth(kRowH)));
         break;
     case ModKind::Int:
     case ModKind::Float:
-        Label(b, row, "Label", shown, 0, 3, w - 150.0f);
-        Bound(b, row, "Value", "{@" + e.mId + "}", w - 146.0f, 3, 60.0f, kFontSize, kHeaderColor);
-        buttons.push_back(SettingButton(b, row, "Minus", "-", e.mId, -1, w - 82.0f, 0, 38.0f, kRowH));
-        buttons.push_back(SettingButton(b, row, "Plus", "+", e.mId, 1, w - 40.0f, 0, 38.0f, kRowH));
+        Label(b, row, "Label", shown, FullWidth(kRowH));
+        Bound(b, row, "Value", "{@" + e.mId + "}", At(0, 0, kValueW, kRowH), kFontSize, kHeaderColor);
+        buttons.push_back(SettingButton(b, row, "Minus", "-", e.mId, -1, At(0, 0, kStepW, kRowH)));
+        buttons.push_back(SettingButton(b, row, "Plus", "+", e.mId, 1, At(0, 0, kStepW, kRowH)));
         break;
     case ModKind::Action:
-        buttons.push_back(SettingButton(b, row, "Button", shown, e.mId, 1, 0, 0, w, kRowH));
+        buttons.push_back(SettingButton(b, row, "Button", shown, e.mId, 1, FullWidth(kRowH)));
         break;
     case ModKind::Display:
-        Label(b, row, "Label", shown, 0, 3, w * 0.45f, kFontSize, kDimColor);
-        Bound(b, row, "Value", ValueFormat(e), w * 0.45f, 3, w * 0.55f);
+        Label(b, row, "Label", shown, FullWidth(kRowH), kFontSize, kDimColor);
+        Bound(b, row, "Value", ValueFormat(e), At(0, 0, 220.0f, kRowH));
         break;
     case ModKind::Bar:
-        Label(b, row, "Label", shown, 0, 3, 140.0f, kFontSize, kDimColor);
-        Bar(b, row, "Bar", e.mName, e.mMaxName, 144.0f, 3, w - 144.0f, {0.35f, 0.8f, 0.35f, 1.0f});
+        Label(b, row, "Label", shown, At(0, 0, 140.0f, kRowH), kFontSize, kDimColor);
+        Bar(b, row, "Bar", e.mName, e.mMaxName, FullWidth(kRowH - 12.0f, 6.0f), {0.35f, 0.8f, 0.35f, 1.0f});
         break;
     default:
         break;
     }
     return buttons;
+}
+
+// A panel this version can't update in place, so it is rebuilt: the first fixed-size
+// layout (Pages directly in the panel), or the first responsive one (plain-widget rows,
+// pixel-margin stretches that collapsed after a save).
+bool IsOutdatedPanel(Node* panel)
+{
+    if (panel == nullptr)
+    {
+        return false;
+    }
+    Node* layout = panel->FindChild("Layout", false);
+    if (layout == nullptr)
+    {
+        return panel->FindChild("Pages", false) != nullptr;
+    }
+    Node* pages = layout->FindChild("Pages", false);
+    for (uint32_t p = 0; pages != nullptr && p < pages->GetNumChildren(); ++p)
+    {
+        Node* list = pages->GetChild((int32_t)p)->FindChild("List", false);
+        for (uint32_t r = 0; list != nullptr && r < list->GetNumChildren(); ++r)
+        {
+            if (std::strcmp(list->GetChild((int32_t)r)->RuntimeName(), "ArrayWidget") != 0) return true;
+        }
+    }
+    return false;
 }
 
 AssetDir* SceneDir(const std::string& game, std::string& outError)
@@ -250,36 +283,16 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
         return false;
     }
 
-    // panel size from the largest page
-    int columns = 1, rows = 1;
-    for (const auto& list : byGroup)
-    {
-        const int n = (int)list.size();
-        const int cols = n > kMaxRowsPerColumn ? 2 : 1;
-        columns = std::max(columns, cols);
-        rows = std::max(rows, (n + cols - 1) / cols);
-    }
-    const float panelW = columns * kColumnW + kPad * 2.0f;
-    const float panelH = kPagesY + rows * (kRowH + kRowGap) + kRowH + kPad * 2.0f + 22.0f;
-
     Builder b;
+    std::string rebuilt;
+    if (Node* old = root->FindChild("Panel", false); IsOutdatedPanel(old))
+    {
+        root->RemoveChild(old);
+        rebuilt = " The panel was rebuilt with the current scrolling layout.";
+    }
+    // the panel fills the screen; in play the menu controller insets it (margin, max size)
     Quad* panel = b.Ensure<Quad>(root.Get(), "Panel", [&](Quad* q) {
-        switch (options.position)
-        {
-        case 1:
-            q->SetAnchorMode(AnchorMode::TopLeft);
-            q->SetPosition(16.0f, 16.0f);
-            break;
-        case 2:
-            q->SetAnchorMode(AnchorMode::TopRight);
-            q->SetPosition(-panelW - 16.0f, 16.0f);
-            break;
-        default:
-            q->SetAnchorMode(AnchorMode::Mid);
-            q->SetPosition(-panelW * 0.5f, -panelH * 0.5f);
-            break;
-        }
-        q->SetDimensions(panelW, panelH);
+        Full(q);
         q->SetColor(kPanelColor);
     });
     if (panel == nullptr)
@@ -287,114 +300,96 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
         outMessage = "Panel exists but is not a Quad: left as it is.";
         return false;
     }
-    Label(b, panel, "Title", map->mTitle.empty() ? std::string("Mod Settings") : map->mTitle, kPad, 8.0f,
-          panelW - kPad * 2.0f, 22.0f, kHeaderColor);
+    Widget* layout = Array(b, panel, "Layout", false, kGap, kPad, Filled());
+    if (layout == nullptr)
+    {
+        outMessage = "Panel/Layout exists but is not an ArrayWidget (or the engine has none): left as it is.";
+        return false;
+    }
+    Label(b, layout, "Title", map->mTitle.empty() ? std::string("Mod Settings") : map->mTitle, FullWidth(kTitleH), 20.0f,
+          kHeaderColor);
 
-    // tabs
-    Widget* tabs = Group(b, panel, "Tabs", kPad, 40.0f, panelW - kPad * 2.0f, kRowH);
-    const float tabW = std::min(140.0f, (panelW - kPad * 2.0f) / float(groups.size()) - 4.0f);
+    // tabs: a row that scrolls sideways when the groups don't fit
+    ScrollContainer* tabStrip = Scroll(b, layout, "TabStrip", true, FullWidth(kRowH));
+    Widget* tabs = Array(b, tabStrip, "Tabs", true, 4.0f, 0.0f, At(0, 0, 0, kRowH));
     std::vector<Button*> tabButtons;
     for (size_t g = 0; g < groups.size(); ++g)
     {
         const std::string group = groups[g].empty() ? std::string("General") : groups[g];
         tabButtons.push_back(SettingButton(b, tabs, "Tab_" + NodeName(group), group, "@page:" + NodeName(group), 1,
-                                           float(g) * (tabW + 4.0f), 0.0f, tabW, kRowH));
+                                           At(0, 0, kTabW, kRowH)));
+    }
+    if (tabs != nullptr)
+    {
+        tabs->SetWidth(float(groups.size()) * (kTabW + 4.0f));
     }
 
-    // pages
-    Widget* pages = Group(b, panel, "Pages", kPad, kPagesY, panelW - kPad * 2.0f, rows * (kRowH + kRowGap));
-    std::vector<std::vector<Button*>> pageFirstRows(groups.size());
-    for (size_t g = 0; g < groups.size(); ++g)
+    // pages: each a vertical scroll list taking the panel's remaining height
+    Widget* pages = b.Ensure<Widget>(layout, "Pages", [](Widget* w) { FillRest(w); });
+    std::vector<Button*> pageFirstButtons(groups.size(), nullptr);
+    std::vector<std::vector<Button*>> pageButtons(groups.size());
+    for (size_t g = 0; g < groups.size() && pages != nullptr; ++g)
     {
         const std::string group = groups[g].empty() ? std::string("General") : groups[g];
-        Widget* page = b.Ensure<Widget>(pages, "Page_" + NodeName(group), [&](Widget* w) {
-            Place(w, 0.0f, 0.0f, panelW - kPad * 2.0f, rows * (kRowH + kRowGap));
+        ScrollContainer* page = Scroll(b, pages, "Page_" + NodeName(group), false, [&](Widget* w) {
+            Full(w);
             w->SetVisible(g == 0);
         });
-        if (page == nullptr)
+        Widget* list = Array(b, page, "List", false, kRowGap, 0.0f, At(0, 0, 0, kRowH));
+        if (list == nullptr)
         {
             continue;
         }
-        const auto& list = byGroup[g];
-        const int cols = (int)list.size() > kMaxRowsPerColumn ? 2 : 1;
-        const int perCol = ((int)list.size() + cols - 1) / cols;
-        std::vector<std::vector<std::vector<Button*>>> grid(cols);
-        for (size_t i = 0; i < list.size(); ++i)
+        std::vector<std::vector<Button*>> rows;
+        for (const ModEntry* e : byGroup[g])
         {
-            const int c = (int)i / perCol, r = (int)i % perCol;
-            std::vector<Button*> row = MakeRow(b, page, *list[i], c * kColumnW, r * (kRowH + kRowGap));
+            std::vector<Button*> row = MakeRow(b, list, *e);
             if (!row.empty())
             {
-                grid[c].push_back(row);
+                rows.push_back(row);
             }
         }
-        // navigation: rows within each column; columns side by side
-        for (auto& column : grid)
+        // the list is as tall as its rows (an ArrayWidget doesn't size itself)
+        const float n = float(list->GetNumChildren());
+        list->SetHeight(std::max(kRowH, n * (kRowH + kRowGap) - kRowGap));
+        LinkNavigation(rows);
+        if (!rows.empty())
         {
-            LinkNavigation(column);
-        }
-        if (cols == 2 && !grid[0].empty() && !grid[1].empty())
-        {
-            for (size_t r = 0; r < grid[0].size() && r < grid[1].size(); ++r)
-            {
-                Button* left = grid[0][r].back();
-                Button* right = grid[1][r].front();
-                if (left->GetNavRight() == nullptr) left->SetNavRight(right);
-                if (right->GetNavLeft() == nullptr) right->SetNavLeft(left);
-            }
-        }
-        if (!grid[0].empty())
-        {
-            pageFirstRows[g] = grid[0].front();
-            // tab -> its page's first row and back
-            if (tabButtons[g] != nullptr && tabButtons[g]->GetNavDown() == nullptr)
-            {
-                tabButtons[g]->SetNavDown(grid[0].front().front());
-            }
-            for (Button* btn : grid[0].front())
+            pageFirstButtons[g] = rows.front().front();
+            for (Button* btn : rows.front())
             {
                 if (btn->GetNavUp() == nullptr) btn->SetNavUp(tabButtons[g]);
             }
+            for (const auto& row : rows) pageButtons[g].insert(pageButtons[g].end(), row.begin(), row.end());
         }
     }
     LinkNavigation({tabButtons});
 
     // footer
-    const float footerY = panelH - kPad - kRowH - 20.0f;
-    Widget* footer = Group(b, panel, "Footer", kPad, footerY, panelW - kPad * 2.0f, kRowH + 20.0f);
-    Button* save = SettingButton(b, footer, "Save", "Save", "@save", 1, 0.0f, 0.0f, 110.0f, kRowH);
-    Button* reset = SettingButton(b, footer, "Reset", "Reset to defaults", "@reset", 1, 116.0f, 0.0f, 170.0f, kRowH);
-    Button* close = SettingButton(b, footer, "Close", "Close", "@close", 1, 292.0f, 0.0f, 110.0f, kRowH);
+    Widget* footer = Array(b, layout, "Footer", true, kGap, 0.0f, FullWidth(kRowH));
+    Button* save = SettingButton(b, footer, "Save", "Save", "@save", 1, At(0, 0, 110.0f, kRowH));
+    Button* reset = SettingButton(b, footer, "Reset", "Reset to defaults", "@reset", 1, At(0, 0, 180.0f, kRowH));
+    Button* close = SettingButton(b, footer, "Close", "Close", "@close", 1, At(0, 0, 110.0f, kRowH));
     LinkNavigation({{save, reset, close}});
-    // pages -> footer (each page's last rows), footer -> tabs
-    for (uint32_t p = 0; p < pages->GetNumChildren(); ++p)
+    // tab -> its page's first button (else the footer); the page's buttons without a down
+    // link (its last row) -> Save. Footer -> up is set when a page is shown (ShowPage).
+    for (size_t g = 0; g < tabButtons.size(); ++g)
     {
-        Node* page = pages->GetChild((int32_t)p);
-        for (uint32_t r = 0; r < page->GetNumChildren(); ++r)
+        Button* tab = tabButtons[g];
+        if (tab != nullptr && tab->GetNavDown() == nullptr)
         {
-            Node* row = page->GetChild((int32_t)r);
-            for (uint32_t i = 0; i < row->GetNumChildren(); ++i)
-            {
-                Button* btn = row->GetChild((int32_t)i)->As<Button>();
-                if (btn != nullptr && btn->GetNavDown() == nullptr && save != nullptr)
-                {
-                    btn->SetNavDown(save);
-                }
-            }
+            tab->SetNavDown(pageFirstButtons[g] != nullptr ? pageFirstButtons[g] : save);
+        }
+        for (Button* btn : pageButtons[g])
+        {
+            if (btn->GetNavDown() == nullptr && save != nullptr) btn->SetNavDown(save);
         }
     }
     for (Button* btn : {save, reset, close})
     {
         if (btn != nullptr && btn->GetNavUp() == nullptr && !tabButtons.empty())
         {
-            btn->SetNavUp(tabButtons.front());
-        }
-    }
-    for (Button* tab : tabButtons)
-    {
-        if (tab != nullptr && tab->GetNavDown() == nullptr && save != nullptr)
-        {
-            tab->SetNavDown(save); // a page without buttons
+            btn->SetNavUp(pageFirstButtons[0] != nullptr ? pageFirstButtons[0] : tabButtons.front());
         }
     }
     bool anyStartup = false;
@@ -404,7 +399,7 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     }
     if (anyStartup)
     {
-        Label(b, footer, "Note", "* applies when the game restarts", 0.0f, kRowH, 400.0f, 13.0f, kDimColor);
+        Label(b, layout, "Note", "* applies when the game restarts", FullWidth(16.0f), 13.0f, kDimColor);
     }
 
     // controller
@@ -419,19 +414,24 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
         // the controller hides the panel, never the root: hidden widgets don't tick, so
         // the root (and the controller in it) must stay visible to see the open button
         controller->SetPanel(panel);
+        controller->SetPanelFit(kMaxPanel, kMargin, options.position);
         root->SetVisible(true);
         controller->SetToggleButton(options.toggleButton);
         controller->SetToggleAction(options.toggleAction);
     }
 
+    // the map's style (Menu Style window) over everything generated or kept
+    ModStyle_Apply(root.Get(), map->mStyle);
+
     // rows of entries no longer in the map: reported, not deleted (they may be the user's)
     std::vector<std::string> stale;
-    for (uint32_t p = 0; p < pages->GetNumChildren(); ++p)
+    for (uint32_t p = 0; pages != nullptr && p < pages->GetNumChildren(); ++p)
     {
         Node* page = pages->GetChild((int32_t)p);
-        for (uint32_t r = 0; r < page->GetNumChildren(); ++r)
+        Node* list = page->FindChild("List", false);
+        for (uint32_t r = 0; list != nullptr && r < list->GetNumChildren(); ++r)
         {
-            const std::string& name = page->GetChild((int32_t)r)->GetName();
+            const std::string& name = list->GetChild((int32_t)r)->GetName();
             if (name.compare(0, 4, "Row_") != 0) continue;
             bool found = false;
             for (const ModEntry& e : map->mEntries)
@@ -466,7 +466,7 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
 
     outMessage = std::string(updating ? "Updated " : "Created ") + stub->mName + ": " + std::to_string(b.added) +
                  " node(s) added" + (updating ? ", " + std::to_string(b.kept) + " kept as they were" : std::string()) +
-                 ". Instance it in your game's scene.";
+                 "." + rebuilt + " Instance it in your game's scene.";
     if (!stale.empty())
     {
         outMessage += " Rows whose entries are gone from the map (delete them if you don't want them):";
@@ -475,6 +475,70 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
             outMessage += " " + s;
         }
     }
+    LogDebug("Mods: %s", outMessage.c_str());
+    return true;
+}
+
+namespace
+{
+// Settings UIs in a live tree: nodes with a RecompMenuController and a Panel child.
+int RestyleInstances(Node* node, const ModStyle& style)
+{
+    if (node == nullptr)
+    {
+        return 0;
+    }
+    bool controller = false;
+    for (uint32_t i = 0; i < node->GetNumChildren() && !controller; ++i)
+    {
+        controller = node->GetChild((int32_t)i)->As<RecompMenuController>() != nullptr;
+    }
+    if (controller && node->FindChild("Panel", false) != nullptr)
+    {
+        ModStyle_Apply(node, style);
+        return 1;
+    }
+    int count = 0;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        count += RestyleInstances(node->GetChild((int32_t)i), style);
+    }
+    return count;
+}
+}
+
+int ModScene_RestyleOpen(const ModStyle& style)
+{
+    World* world = GetWorld(0);
+    return world != nullptr ? RestyleInstances(world->GetRootNode(), style) : 0;
+}
+
+bool ModScene_ApplyStyle(ModMap* map, const std::string& sceneName, std::string& outMessage)
+{
+    if (map == nullptr)
+    {
+        outMessage = "No Mod Map selected.";
+        return false;
+    }
+    const std::string name = sceneName.empty() ? ModScene_DefaultName(map) : sceneName;
+    AssetStub* stub = FetchAssetStub(name);
+    Scene* scene = (stub != nullptr && stub->mType == Scene::GetStaticType()) ? LoadAsset<Scene>(name) : nullptr;
+    if (scene == nullptr)
+    {
+        outMessage = "No scene " + name + ": generate it first.";
+        return false;
+    }
+    NodePtr root = scene->Instantiate();
+    if (root.Get() == nullptr)
+    {
+        outMessage = "Cannot open the scene " + name + ".";
+        return false;
+    }
+    ModStyle_Apply(root.Get(), map->mStyle);
+    scene->Capture(root.Get());
+    AssetManager::Get()->SaveAsset(*stub);
+    const int live = ModScene_RestyleOpen(map->mStyle);
+    outMessage = "Restyled " + name + (live > 0 ? " and " + std::to_string(live) + " instance(s) open in the editor." : ".");
     LogDebug("Mods: %s", outMessage.c_str());
     return true;
 }

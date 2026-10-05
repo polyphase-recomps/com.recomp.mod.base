@@ -11,7 +11,8 @@
  *                Put one in a UI's root, next to the panel it shows/hides (Panel property,
  *                default: the sibling named "Panel"). The root must stay visible: hidden
  *                widgets don't tick. While the panel is visible it gets the gamepad: a
- *                button is selected for navigation,
+ *                (visible) button is selected for navigation and kept scrolled into view
+ *                in any ScrollContainer, the right stick scrolls the shown page,
  *                the game gets no input (Recomp_IsInputCaptured), and B closes the UI.
  *                Toggle Button (a gamepad button) and/or Toggle Action (a PlayerInput
  *                action, "Category/Name") open and close it; both are logged at start.
@@ -50,6 +51,12 @@ MODBASE_API std::vector<std::string> RecompInputActions();
 MODBASE_API bool RecompActionJustPressed(const std::string& action);
 MODBASE_API const char* RecompGamepadButtonName(int32_t gamepadButton);
 
+struct ModStyle;
+// Restyles a settings UI tree (a generated scene's root, or a live instance of it): the
+// Panel's tint / texture, every RecompButton (state textures and colors, text, selection
+// border; tabs use the tab text size), and the Title / Label / Value / Note texts.
+MODBASE_API void ModStyle_Apply(Node* root, const ModStyle& style);
+
 class MODBASE_API RecompText : public Text
 {
 public:
@@ -83,6 +90,7 @@ public:
     void SetToggle(const std::string& variable, int32_t onValue = 1);
     void SetStep(const std::string& variable, int32_t step, int32_t minValue, int32_t maxValue);
     void SetLabelFormat(const std::string& format);
+    void SetHighlight(glm::vec4 color, float width);
 
 protected:
     std::string mSetting;
@@ -146,6 +154,9 @@ public:
     // controller outside it: hidden widgets don't tick, so a controller inside the widget
     // it hides can't open it again.
     void SetPanel(Node* panel);
+    // A full-stretch panel fills the screen minus `margin`, at most `maxSize` (0 = no cap),
+    // placed by `align` (0 centre, 1 left, 2 right) when the screen is larger.
+    void SetPanelFit(glm::vec2 maxSize, float margin, int32_t align);
 
     static const std::vector<RecompMenuController*>& GetAll();
     static bool IsCapturingInput();
@@ -154,12 +165,19 @@ protected:
     Widget* Target();
     bool TargetVisible();
     void SyncBoundVariable();
+    void FitPanel();
+    void GamepadScroll(float deltaTime, Widget* target);
 
     std::string mTitle = "Menu";
     bool mStartVisible = false;
     bool mCaptureInput = true;
     WeakPtr<Button> mFirstButton;
     WeakPtr<Widget> mPanel;
+    glm::vec2 mMaxPanelSize = {0.0f, 0.0f};
+    float mPanelMargin = 16.0f;
+    int32_t mPanelAlign = 0;
+    glm::vec4 mFitMargins = {-1.0f, -1.0f, -1.0f, -1.0f};
+    float mScrollSpeed = 420.0f;
     int32_t mToggleButton = -1;
     std::string mToggleAction;
     std::string mCloseAction;

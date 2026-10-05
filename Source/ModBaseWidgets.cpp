@@ -5,18 +5,24 @@
 
 #include "ModBaseWidgets.h"
 
+#include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
 #include "ModBaseSettings.h"
 
+#include "AssetManager.h"
+#include "Assets/Font.h"
+#include "Assets/Texture.h"
 #include "Log.h"
 #include "Input/Input.h"
 #include "Nodes/Widgets/Quad.h"
+#include "Nodes/Widgets/ScrollContainer.h"
 #if __has_include("Input/PlayerInputSystem.h")
 #include "Input/PlayerInputSystem.h"
 #endif
 
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 
 FORCE_LINK_DEF(RecompText);
@@ -190,8 +196,31 @@ void CloseMenu(Node* from)
     }
 }
 
+// The first button in a subtree, skipping hidden widgets (they don't tick, so a hidden
+// selected button would leave the gamepad stuck).
+Button* FirstVisibleButton(Node* node)
+{
+    if (node == nullptr)
+    {
+        return nullptr;
+    }
+    if (Widget* w = node->As<Widget>())
+    {
+        if (!w->IsVisible()) return nullptr;
+    }
+    if (Button* b = node->As<Button>())
+    {
+        return b;
+    }
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        if (Button* b = FirstVisibleButton(node->GetChild((int32_t)i))) return b;
+    }
+    return nullptr;
+}
+
 // Page tabs: the nearest ancestor with a "Pages" child shows only the page named
-// "Page_<name>" and selects that page's first button.
+// "Page_<name>". Its sibling "Footer" buttons then navigate up to that page's last row.
 void ShowPage(Node* from, const std::string& page)
 {
     for (Node* n = from->GetParent(); n != nullptr; n = n->GetParent())
@@ -202,15 +231,91 @@ void ShowPage(Node* from, const std::string& page)
             continue;
         }
         const std::string wanted = "Page_" + page;
+        Node* shown = nullptr;
         for (uint32_t i = 0; i < pages->GetNumChildren(); ++i)
         {
             if (Widget* w = pages->GetChild((int32_t)i)->As<Widget>())
             {
                 w->SetVisible(w->GetName() == wanted);
+                if (w->GetName() == wanted) shown = w;
+            }
+        }
+        Node* footer = n->FindChild("Footer", false);
+        if (shown != nullptr && footer != nullptr)
+        {
+            Node* list = shown->FindChild("List", false);
+            if (list == nullptr) list = shown;
+            Button* last = nullptr;
+            for (int32_t r = (int32_t)list->GetNumChildren() - 1; r >= 0 && last == nullptr; --r)
+            {
+                last = FirstVisibleButton(list->GetChild(r));
+            }
+            Button* tab = from->As<Button>();
+            for (uint32_t i = 0; i < footer->GetNumChildren(); ++i)
+            {
+                if (Button* btn = footer->GetChild((int32_t)i)->As<Button>())
+                {
+                    btn->SetNavUp(last != nullptr ? last : tab);
+                }
             }
         }
         return;
     }
+}
+
+// Scrolls every ScrollContainer between `button` and `stop` so the button is in view.
+void KeepInView(Button* button, Node* stop)
+{
+    const float kEdge = 6.0f;
+    for (Node* n = button->GetParent(); n != nullptr && n != stop; n = n->GetParent())
+    {
+        ScrollContainer* scroll = n->As<ScrollContainer>();
+        if (scroll == nullptr)
+        {
+            continue;
+        }
+        const Rect view = scroll->GetRect();
+        const Rect r = button->GetRect();
+        const glm::vec2 s = scroll->GetAbsoluteScale();
+        // a page shown this frame may not have its rects yet: wait a frame
+        if (s.x <= 0.0f || s.y <= 0.0f || view.mHeight <= 0.0f || r.mHeight <= 0.0f)
+        {
+            continue;
+        }
+        glm::vec2 offset = scroll->GetScrollOffset();
+        if (scroll->CanScrollVertically())
+        {
+            if (r.mY < view.mY) offset.y -= (view.mY - r.mY) / s.y + kEdge;
+            else if (r.mY + r.mHeight > view.mY + view.mHeight) offset.y += (r.mY + r.mHeight - view.mY - view.mHeight) / s.y + kEdge;
+        }
+        if (scroll->CanScrollHorizontally())
+        {
+            if (r.mX < view.mX) offset.x -= (view.mX - r.mX) / s.x + kEdge;
+            else if (r.mX + r.mWidth > view.mX + view.mWidth) offset.x += (r.mX + r.mWidth - view.mX - view.mWidth) / s.x + kEdge;
+        }
+        if (offset != scroll->GetScrollOffset())
+        {
+            scroll->SetScrollOffset(offset);
+        }
+    }
+}
+
+// The visible ScrollContainer under `node` that scrolls up/down (the shown page).
+ScrollContainer* VisibleVerticalScroll(Node* node)
+{
+    if (Widget* w = node->As<Widget>())
+    {
+        if (!w->IsVisible()) return nullptr;
+    }
+    if (ScrollContainer* s = node->As<ScrollContainer>())
+    {
+        if (s->CanScrollVertically()) return s;
+    }
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        if (ScrollContainer* s = VisibleVerticalScroll(node->GetChild((int32_t)i))) return s;
+    }
+    return nullptr;
 }
 }
 
@@ -365,6 +470,12 @@ void RecompButton::Tick(float deltaTime)
     if (selected != mHighlighted)
     {
         mHighlighted = selected;
+        // a page tab shows its page as soon as it's selected, so moving down from it
+        // lands on that (visible) page
+        if (selected && mSetting.compare(0, 6, "@page:") == 0)
+        {
+            ShowPage(this, mSetting.substr(6));
+        }
         if (Quad* quad = GetQuad())
         {
             quad->SetBorderColor(mHighlightColor);
@@ -390,6 +501,17 @@ void RecompButton::Tick(float deltaTime)
                        result);
         }
         mPending = 0;
+    }
+}
+
+void RecompButton::SetHighlight(glm::vec4 color, float width)
+{
+    mHighlightColor = color;
+    mHighlightWidth = width;
+    if (Quad* quad = GetQuad())
+    {
+        quad->SetBorderColor(mHighlightColor);
+        quad->SetBorderWidth(mHighlighted ? mHighlightWidth : 0.0f);
     }
 }
 
@@ -472,6 +594,90 @@ void RecompBar::SetVariables(const std::string& variable, const std::string& max
     mMaxVariable = maxVariable;
 }
 
+// ---- style -------------------------------------------------------------------------------
+namespace
+{
+void StyleText(Text* t, Font* font, float size, glm::vec4 color)
+{
+    t->SetFont(font);
+    t->SetTextSize(size);
+    t->SetColor(color);
+}
+
+bool HasButton(Node* row)
+{
+    for (uint32_t i = 0; i < row->GetNumChildren(); ++i)
+    {
+        if (row->GetChild((int32_t)i)->As<Button>() != nullptr) return true;
+    }
+    return false;
+}
+
+void ApplyStyle(Node* node, const ModStyle& s, Font* font)
+{
+    if (node->IsTransient())
+    {
+        return; // a widget's own internals (a button's quad and text)
+    }
+    const std::string& name = node->GetName();
+    Node* parent = node->GetParent();
+    if (RecompButton* b = node->As<RecompButton>())
+    {
+        b->SetNormalTexture(s.mButtonTextures[ModStyle::Normal].Get<Texture>());
+        b->SetHoveredTexture(s.mButtonTextures[ModStyle::Hovered].Get<Texture>());
+        b->SetPressedTexture(s.mButtonTextures[ModStyle::Pressed].Get<Texture>());
+        b->SetLockedTexture(s.mButtonTextures[ModStyle::Locked].Get<Texture>());
+        b->SetNormalColor(s.mButtonColors[ModStyle::Normal]);
+        b->SetHoveredColor(s.mButtonColors[ModStyle::Hovered]);
+        b->SetPressedColor(s.mButtonColors[ModStyle::Pressed]);
+        b->SetLockedColor(s.mButtonColors[ModStyle::Locked]);
+        b->SetHighlight(s.mHighlightColor, s.mHighlightWidth);
+        const bool tab = parent != nullptr && parent->GetName() == "Tabs";
+        if (Text* t = b->GetText())
+        {
+            StyleText(t, font, tab ? s.mTabTextSize : s.mButtonTextSize, s.mButtonTextColor);
+        }
+        b->MarkDirty();
+        return;
+    }
+    if (Text* t = node->As<Text>())
+    {
+        if (name == "Title") StyleText(t, font, s.mTitleSize, s.mTitleColor);
+        else if (name == "Note") StyleText(t, font, s.mNoteSize, s.mInfoColor);
+        else if (name == "Value") StyleText(t, font, s.mValueSize, s.mValueColor);
+        else if (name == "Label")
+            StyleText(t, font, s.mLabelSize, (parent != nullptr && HasButton(parent)) ? s.mLabelColor : s.mInfoColor);
+        else t->SetFont(font);
+    }
+    else if (name == "Panel")
+    {
+        if (Quad* q = node->As<Quad>())
+        {
+            q->SetColor(s.mPanelColor);
+            q->SetTexture(s.mPanelTexture.Get<Texture>());
+        }
+    }
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        ApplyStyle(node->GetChild((int32_t)i), s, font);
+    }
+}
+}
+
+void ModStyle_Apply(Node* root, const ModStyle& style)
+{
+    if (root == nullptr)
+    {
+        return;
+    }
+    Font* font = style.mFont.Get<Font>();
+    if (font == nullptr)
+    {
+        font = LoadAsset<Font>("F_Roboto32"); // the engine's default text font
+    }
+    ApplyStyle(root, style, font);
+}
+
 // ---- input actions -----------------------------------------------------------------------
 std::vector<std::string> RecompInputActions()
 {
@@ -542,19 +748,6 @@ bool IsInside(Node* node, Node* ancestor)
     return false;
 }
 
-Button* FirstButtonIn(Node* node)
-{
-    if (node == nullptr) return nullptr;
-    if (Button* b = node->As<Button>())
-    {
-        if (b->IsVisible()) return b;
-    }
-    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
-    {
-        if (Button* b = FirstButtonIn(node->GetChild((int32_t)i))) return b;
-    }
-    return nullptr;
-}
 }
 
 // The panel property, else the sibling named "Panel", else the parent (older UIs).
@@ -679,6 +872,14 @@ void RecompMenuController::SetPanel(Node* panel)
     mPanel = ResolveWeakPtr<Widget>(panel);
 }
 
+void RecompMenuController::SetPanelFit(glm::vec2 maxSize, float margin, int32_t align)
+{
+    mMaxPanelSize = maxSize;
+    mPanelMargin = margin;
+    mPanelAlign = align;
+    mFitMargins = {-1.0f, -1.0f, -1.0f, -1.0f};
+}
+
 const std::vector<RecompMenuController*>& RecompMenuController::GetAll()
 {
     return Controllers();
@@ -730,6 +931,7 @@ void RecompMenuController::Tick(float deltaTime)
     }
 
     Widget* target = Target();
+    FitPanel();
     if (!mBoundVariable.empty())
     {
         SyncBoundVariable();
@@ -769,10 +971,72 @@ void RecompMenuController::Tick(float deltaTime)
     }
     mSelectPending = false;
     Button* selected = Button::GetSelectedButton();
-    if (selected == nullptr || !IsInside(selected, target))
+    // nothing selected, outside this UI, or hidden (a hidden button doesn't tick, so the
+    // gamepad would be stuck on it): select the first button, else the first visible one
+    if (selected == nullptr || !IsInside(selected, target) || !selected->IsVisible(true))
     {
         Button* first = mFirstButton.Get();
-        Button::SetSelectedButton(first != nullptr ? first : FirstButtonIn(target));
+        selected = (first != nullptr && first->IsVisible(true)) ? first : FirstVisibleButton(target);
+        Button::SetSelectedButton(selected);
+    }
+    if (selected != nullptr)
+    {
+        KeepInView(selected, target);
+    }
+    GamepadScroll(deltaTime, target);
+}
+
+// Right stick up / down scrolls the shown page (rows without buttons, long text).
+void RecompMenuController::GamepadScroll(float deltaTime, Widget* target)
+{
+    const float dir = (INP_IsGamepadButtonDown(GAMEPAD_R_DOWN, 0) ? 1.0f : 0.0f) -
+                      (INP_IsGamepadButtonDown(GAMEPAD_R_UP, 0) ? 1.0f : 0.0f);
+    if (dir == 0.0f)
+    {
+        return;
+    }
+    if (ScrollContainer* scroll = VisibleVerticalScroll(target))
+    {
+        glm::vec2 offset = scroll->GetScrollOffset();
+        offset.y += dir * mScrollSpeed * deltaTime;
+        scroll->SetScrollOffset(offset);
+    }
+}
+
+// Fits a full-stretch panel to the screen: margins at least mPanelMargin, at most
+// mMaxPanelSize, aligned by mPanelAlign. Margins only change when the screen does.
+void RecompMenuController::FitPanel()
+{
+    Widget* panel = mPanel.Get();
+    if (panel == nullptr || mMaxPanelSize.x <= 0.0f || mMaxPanelSize.y <= 0.0f ||
+        panel->GetAnchorMode() != AnchorMode::FullStretch)
+    {
+        return;
+    }
+    Widget* parent = panel->GetParentWidget();
+    if (parent == nullptr)
+    {
+        return;
+    }
+    const Rect area = parent->GetRect();
+    const glm::vec2 scale = parent->GetAbsoluteScale();
+    if (area.mWidth <= 0.0f || area.mHeight <= 0.0f || scale.x <= 0.0f || scale.y <= 0.0f)
+    {
+        return;
+    }
+    const float w = area.mWidth / scale.x;
+    const float h = area.mHeight / scale.y;
+    const float spareX = std::max(mPanelMargin * 2.0f, w - mMaxPanelSize.x);
+    const float spareY = std::max(mPanelMargin * 2.0f, h - mMaxPanelSize.y);
+    float left = spareX * 0.5f;
+    if (mPanelAlign == 1) left = mPanelMargin;
+    if (mPanelAlign == 2) left = spareX - mPanelMargin;
+    const glm::vec4 margins = {std::floor(left), std::floor(spareY * 0.5f), std::floor(spareX - left),
+                               std::floor(spareY * 0.5f)};
+    if (margins != mFitMargins)
+    {
+        mFitMargins = margins;
+        panel->SetMargins(margins.x, margins.y, margins.z, margins.w);
     }
 }
 
@@ -809,6 +1073,10 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Capture Input", this, &mCaptureInput));
     outProps.push_back(Property(DatumType::Node, "First Button", this, &mFirstButton));
     outProps.push_back(Property(DatumType::Node, "Panel", this, &mPanel));
+    outProps.push_back(Property(DatumType::Vector2D, "Max Panel Size", this, &mMaxPanelSize));
+    outProps.push_back(Property(DatumType::Float, "Panel Margin", this, &mPanelMargin));
+    outProps.push_back(Property(DatumType::Integer, "Panel Align", this, &mPanelAlign));
+    outProps.push_back(Property(DatumType::Float, "Scroll Speed", this, &mScrollSpeed));
     outProps.push_back(Property(DatumType::Integer, "Toggle Button", this, &mToggleButton));
     outProps.push_back(Property(DatumType::String, "Toggle Action", this, &mToggleAction));
     outProps.push_back(Property(DatumType::String, "Close Action", this, &mCloseAction));

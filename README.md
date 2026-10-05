@@ -101,8 +101,12 @@ position and the button that opens it. It is saved in `Packages/<game>/Assets/Sc
 
 The scene contains:
 
-- a Canvas with a panel and one tab per group;
-- a page of rows per group, in two columns when a group is long:
+- a Canvas (kept visible) with a panel that fits the screen: it fills a 640x480 Wii /
+  GameCube screen and is a centred panel of at most 760x560 on bigger ones;
+- inside, an `ArrayWidget` column: the title, a row of tabs (one per group, scrolls
+  sideways when they don't fit), the pages, and the footer;
+- a page per group: a `ScrollContainer` around an `ArrayWidget` list of rows that
+  stretch with the panel:
   - **Toggle / Choice**: a button ("Infinite HP: ON");
   - **Int / Float**: the value with − / +;
   - **Action**: a button;
@@ -110,7 +114,10 @@ The scene contains:
 - a footer with Save, Reset to defaults and Close;
 - a Display page with the resolution scaler.
 
-Gamepad navigation is wired: tabs go down to their page, rows go down to the footer.
+Gamepad: left / right over the tabs switches pages as you go, down / up walks the rows
+(the list scrolls to keep the selected one in view), the last row goes down to the
+footer, and the right stick scrolls the page. Mouse wheel and drag scroll too. A scene
+made by the first, fixed-size version gets its panel rebuilt when you Update it.
 
 A `RecompMenuController` makes the scene a menu:
 
@@ -123,7 +130,26 @@ Instance the scene in your game's scene.
 
 **Generating again updates the scene.** Nodes are matched by name: what exists is left
 exactly as you changed it, and only new entries get rows. Rows of entries you removed
-from the map are listed in the log, not deleted.
+from the map are listed in the log, not deleted. The exception is the look: the map's
+menu style (below) is applied on every Generate / Update.
+
+#### Menu style
+
+**Tools > Recomp > Mods > Menu Style** (or **Menu Style** on the Mod Map's inspector)
+sets how the menu looks. It is saved with the Mod Map, so it ships with the game and
+survives regenerating:
+
+- **Background**: the panel's tint and texture (the tint multiplies the texture).
+- **Buttons**: a color and a texture per state (Normal, Hovered, Pressed, Locked; a state
+  without a texture uses Normal's), text color, **button text size** and **tab text size**,
+  and the border of the gamepad-selected button.
+- **Text**: the font (none = the engine default) and the title, label, read-only label
+  and value colors, with sizes for the title, labels, values and the note.
+
+Textures and fonts are picked from a filterable list, or dragged from the asset browser.
+**Live preview** restyles the menu in the open level as you edit. **Update Scene** saves
+the style and restyles the scene asset (layout and navigation untouched). The same
+restyle is available to code as `ModStyle_Apply(root, style)`.
 
 ### 3. Script it (optional)
 
@@ -184,9 +210,13 @@ All are in the Add Node list. Their bindings are inspector properties (category
   Keep the root visible: Polyphase widgets don't tick while hidden, so a controller inside
   the widget it hides could never open it again. Properties:
   - **Panel** (the widget shown/hidden; empty = the sibling named `Panel`, else the parent);
+  - **Max Panel Size** / **Panel Margin** / **Panel Align** (a full-stretch panel fills the
+    screen minus the margin, at most that size, aligned centre / left / right; 0 = off);
+  - **Scroll Speed** (right stick scrolling, pixels per second);
   - **Title**;
   - **Start Visible**;
-  - **Capture Input** (gamepad navigation; the game gets nothing; B closes);
+  - **Capture Input** (gamepad navigation; the game gets nothing; B closes; the selected
+    button is kept visible and scrolled into view in any `ScrollContainer`);
   - **First Button**;
   - **Toggle Button** (a gamepad button code, controller 1; Select is Back on XInput);
   - **Toggle Action** / **Close Action** (a PlayerInput action, `Category/Name` or just

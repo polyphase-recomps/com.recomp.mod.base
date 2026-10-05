@@ -18,8 +18,58 @@ DEFINE_ASSET(ModMap);
 namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
-// to ASSET_VERSION_*).
-constexpr uint32_t kModMapVersion = 1;
+// to ASSET_VERSION_*). 2: the menu style.
+constexpr uint32_t kModMapVersion = 2;
+
+void ReadStyle(Stream& stream, ModStyle& s)
+{
+    s.mPanelColor = stream.ReadVec4();
+    stream.ReadAsset(s.mPanelTexture);
+    for (int i = 0; i < ModStyle::StateCount; ++i)
+    {
+        stream.ReadAsset(s.mButtonTextures[i]);
+        s.mButtonColors[i] = stream.ReadVec4();
+    }
+    s.mButtonTextColor = stream.ReadVec4();
+    s.mButtonTextSize = stream.ReadFloat();
+    s.mTabTextSize = stream.ReadFloat();
+    s.mHighlightColor = stream.ReadVec4();
+    s.mHighlightWidth = stream.ReadFloat();
+    stream.ReadAsset(s.mFont);
+    s.mTitleColor = stream.ReadVec4();
+    s.mTitleSize = stream.ReadFloat();
+    s.mLabelColor = stream.ReadVec4();
+    s.mInfoColor = stream.ReadVec4();
+    s.mLabelSize = stream.ReadFloat();
+    s.mValueColor = stream.ReadVec4();
+    s.mValueSize = stream.ReadFloat();
+    s.mNoteSize = stream.ReadFloat();
+}
+
+void WriteStyle(Stream& stream, const ModStyle& s)
+{
+    stream.WriteVec4(s.mPanelColor);
+    stream.WriteAsset(s.mPanelTexture);
+    for (int i = 0; i < ModStyle::StateCount; ++i)
+    {
+        stream.WriteAsset(s.mButtonTextures[i]);
+        stream.WriteVec4(s.mButtonColors[i]);
+    }
+    stream.WriteVec4(s.mButtonTextColor);
+    stream.WriteFloat(s.mButtonTextSize);
+    stream.WriteFloat(s.mTabTextSize);
+    stream.WriteVec4(s.mHighlightColor);
+    stream.WriteFloat(s.mHighlightWidth);
+    stream.WriteAsset(s.mFont);
+    stream.WriteVec4(s.mTitleColor);
+    stream.WriteFloat(s.mTitleSize);
+    stream.WriteVec4(s.mLabelColor);
+    stream.WriteVec4(s.mInfoColor);
+    stream.WriteFloat(s.mLabelSize);
+    stream.WriteVec4(s.mValueColor);
+    stream.WriteFloat(s.mValueSize);
+    stream.WriteFloat(s.mNoteSize);
+}
 }
 
 ModMap::ModMap()
@@ -91,6 +141,11 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
         e.mLock = (flags & 2) != 0;
         e.mOnTitle = (flags & 4) != 0;
     }
+    mStyle = ModStyle();
+    if (version >= 2)
+    {
+        ReadStyle(stream, mStyle);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -139,6 +194,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
         stream.WriteString(e.mMaxName);
         stream.WriteUint8((uint8_t)((e.mPersist ? 1 : 0) | (e.mLock ? 2 : 0) | (e.mOnTitle ? 4 : 0)));
     }
+    WriteStyle(stream, mStyle);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)

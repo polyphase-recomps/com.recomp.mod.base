@@ -16,6 +16,8 @@
 
 #include "AssetDir.h"
 #include "AssetManager.h"
+#include "Assets/Font.h"
+#include "Assets/Texture.h"
 #include "Editor/EditorUtils.h"
 #include "Engine.h"
 #include "Input/InputTypes.h"
@@ -51,6 +53,7 @@ uint64_t sHookId = 0;
 const char* kEditorWindow = "recomp.mods.editor";
 const char* kLiveWindow = "recomp.mods.live";
 const char* kDisplayWindow = "recomp.mods.display";
+const char* kStyleWindow = "recomp.mods.style";
 const char* kGenerateWindow = "recomp.mods.generate";
 const char* kGenerateModal = "Generate Mod Settings Scene";
 
@@ -837,7 +840,11 @@ bool DrawGenerate(void*)
     ImGui::SetNextItemWidth(300.0f);
     ImGui::InputText("Scene", sSceneName, sizeof(sSceneName));
     ImGui::SetNextItemWidth(160.0f);
-    ImGui::Combo("Position", &sSceneOptions.position, "Centre\0Top left\0Top right\0");
+    ImGui::Combo("Position", &sSceneOptions.position, "Centre\0Left\0Right\0");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Where the panel sits on screens wider than it (it fills small ones, e.g. Wii / GameCube).");
+    }
     DrawOpenWith();
     ImGui::Checkbox("Include Display settings (resolution scaler)", &sSceneOptions.includeDisplay);
     ImGui::TextDisabled("Saved in Packages/%s/Assets/Scenes. Generating again updates it: nodes you changed stay.",
@@ -1053,6 +1060,210 @@ void DrawDisplaySettings(void*)
     }
 }
 
+// ---- Menu Style ----------------------------------------------------------------------------
+char sStyleScene[128] = "";
+bool sStyleLive = true;
+std::string sStyleMessage;
+
+// A project asset of one type: a filterable list, "(none)" clears; an asset dragged from the
+// asset browser can be dropped on it.
+bool AssetPicker(const char* label, AssetRef& ref, TypeId type)
+{
+    Asset* current = ref.Get();
+    bool changed = false;
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo(label, current ? current->GetName().c_str() : "(none)", ImGuiComboFlags_HeightLarge))
+    {
+        static char filter[64] = "";
+        if (ImGui::IsWindowAppearing())
+        {
+            filter[0] = 0;
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##filter", "filter", filter, sizeof(filter));
+        if (ImGui::Selectable("(none)", current == nullptr))
+        {
+            ref = (const Asset*)nullptr;
+            changed = true;
+        }
+        std::vector<std::string> names;
+        for (const auto& kv : AssetManager::Get()->GetAssetMap())
+        {
+            if (kv.second != nullptr && kv.second->mType == type) names.push_back(kv.first);
+        }
+        std::sort(names.begin(), names.end());
+        std::string f = filter;
+        std::transform(f.begin(), f.end(), f.begin(), ::tolower);
+        for (const std::string& name : names)
+        {
+            std::string lower = name;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            if (!f.empty() && lower.find(f) == std::string::npos) continue;
+            if (ImGui::Selectable(name.c_str(), current != nullptr && current->GetName() == name))
+            {
+                ref = LoadAsset(name);
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("DND_ASSET"))
+        {
+            AssetStub* stub = *(AssetStub**)payload->Data;
+            if (stub != nullptr && stub->mType == type)
+            {
+                ref = LoadAsset(stub->mName);
+                changed = true;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return changed;
+}
+
+// The style window's Update Scene: saves the style with the map, restyles the scene.
+void UpdateStyledScene(ModMap* map)
+{
+    SaveMap(map);
+    ModScene_ApplyStyle(map, sStyleScene, sStyleMessage);
+}
+
+void DrawMenuStyle(void*)
+{
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty()) map = maps.front();
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            if (ImGui::Selectable(m->GetName().c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                map = m;
+                sStyleScene[0] = 0;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (map == nullptr)
+    {
+        ImGui::TextColored(kWarn, "Create a Mod Map first (Tools > Recomp > Mods > Mod Map Editor).");
+        return;
+    }
+    if (sStyleScene[0] == 0) snprintf(sStyleScene, sizeof(sStyleScene), "%s", ModScene_DefaultName(map).c_str());
+
+    ModStyle& s = map->mStyle;
+    bool changed = false;
+    auto color = [&](const char* label, glm::vec4& c) {
+        changed |= ImGui::ColorEdit4(label, &c.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+    };
+    auto size = [&](const char* label, float& v) {
+        ImGui::SetNextItemWidth(120.0f);
+        changed |= ImGui::DragFloat(label, &v, 0.25f, 6.0f, 96.0f, "%.1f px");
+    };
+
+    ImGui::BeginChild("style", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.2f));
+    if (ImGui::CollapsingHeader("Background", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        color("Tint##panel", s.mPanelColor);
+        changed |= AssetPicker("Texture##panel", s.mPanelTexture, Texture::GetStaticType());
+        ImGui::TextDisabled("With a texture the tint multiplies it (white = the texture as it is).");
+    }
+    if (ImGui::CollapsingHeader("Buttons", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        static const char* const kStates[ModStyle::StateCount] = {"Normal", "Hovered", "Pressed", "Locked"};
+        if (ImGui::BeginTable("states", 3, ImGuiTableFlags_SizingFixedFit))
+        {
+            ImGui::TableSetupColumn("State");
+            ImGui::TableSetupColumn("Color");
+            ImGui::TableSetupColumn("Texture");
+            ImGui::TableHeadersRow();
+            for (int i = 0; i < ModStyle::StateCount; ++i)
+            {
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(kStates[i]);
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(220.0f);
+                changed |= ImGui::ColorEdit4("##color", &s.mButtonColors[i].x, ImGuiColorEditFlags_AlphaBar);
+                ImGui::TableNextColumn();
+                changed |= AssetPicker("##texture", s.mButtonTextures[i], Texture::GetStaticType());
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TextDisabled("A state without a texture uses Normal's. Hovered = mouse over; the gamepad's\n"
+                            "selected button gets the border below.");
+        color("Text color##button", s.mButtonTextColor);
+        size("Button text size", s.mButtonTextSize);
+        size("Tab text size", s.mTabTextSize);
+        color("Selected border", s.mHighlightColor);
+        ImGui::SetNextItemWidth(120.0f);
+        changed |= ImGui::DragFloat("Border width", &s.mHighlightWidth, 0.1f, 0.0f, 12.0f, "%.1f px");
+    }
+    if (ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= AssetPicker("Font", s.mFont, Font::GetStaticType());
+        ImGui::TextDisabled("(none) = the engine's default font. Used by the buttons too.");
+        color("Title color", s.mTitleColor);
+        size("Title size", s.mTitleSize);
+        color("Label color", s.mLabelColor);
+        color("Read-only label color", s.mInfoColor);
+        size("Label size", s.mLabelSize);
+        color("Value color", s.mValueColor);
+        size("Value size", s.mValueSize);
+        size("Note size", s.mNoteSize);
+    }
+    ImGui::EndChild();
+
+    if (changed)
+    {
+        map->SetDirtyFlag();
+        if (sStyleLive) ModScene_RestyleOpen(s);
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(260.0f);
+    ImGui::InputText("Scene", sStyleScene, sizeof(sStyleScene));
+    ImGui::SameLine();
+    ImGui::Checkbox("Live preview", &sStyleLive);
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Restyle the settings menus in the open level as you edit (Update Scene saves it).");
+    }
+    if (ImGui::Button("Update Scene", ImVec2(130, 0)))
+    {
+        UpdateStyledScene(map);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Saves the style with the Mod Map and restyles the scene (layout and navigation untouched).\n"
+                          "Generate / Update in the Generate dialog applies it too.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save", ImVec2(90, 0)))
+    {
+        SaveMap(map);
+        sStyleMessage = sStatus;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to defaults", ImVec2(150, 0)))
+    {
+        s = ModStyle();
+        map->SetDirtyFlag();
+        if (sStyleLive) ModScene_RestyleOpen(s);
+    }
+    if (!sStyleMessage.empty())
+    {
+        ImGui::TextWrapped("%s", sStyleMessage.c_str());
+    }
+}
+
 // ---- inspector, create asset ---------------------------------------------------------------
 void DrawModMapInspector(void* object, void*)
 {
@@ -1069,6 +1280,13 @@ void DrawModMapInspector(void* object, void*)
     }
     ImGui::SameLine();
     if (ImGui::Button("Generate Scene...")) OpenGenerate(map->GetName());
+    ImGui::SameLine();
+    if (ImGui::Button("Menu Style"))
+    {
+        sMapName = map->GetName();
+        sStyleScene[0] = 0;
+        if (sHooks && sHooks->OpenWindow) sHooks->OpenWindow(kStyleWindow);
+    }
 }
 
 void CreateModMapAsset(void*)
@@ -1096,6 +1314,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->RegisterWindow(hookId, "Mod Map Editor", kEditorWindow, DrawModMapEditor, nullptr);
         hooks->RegisterWindow(hookId, "Live Variables", kLiveWindow, DrawLiveVariables, nullptr);
         hooks->RegisterWindow(hookId, "Display Settings", kDisplayWindow, DrawDisplaySettings, nullptr);
+        hooks->RegisterWindow(hookId, "Menu Style", kStyleWindow, DrawMenuStyle, nullptr);
 #if MODBASE_HAS_MODALS
         if (hooks->OpenModal == nullptr)
 #endif
@@ -1115,6 +1334,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
                            [](void*) { OpenGenerate(std::string()); }, nullptr, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Live Variables", OpenWindow, (void*)kLiveWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Display Settings", OpenWindow, (void*)kDisplayWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Menu Style", OpenWindow, (void*)kStyleWindow, nullptr);
     }
     if (hooks->RegisterInspector != nullptr)
     {
