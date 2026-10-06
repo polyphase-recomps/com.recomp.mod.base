@@ -210,6 +210,8 @@ What it's made of (all usable in your own UIs, no script needed):
 A runtime supports launching by registering a `RecompGameLauncher` per game
 (`Source/ModBaseLauncher.h`) with `Recomp_RegisterLauncher`. It covers checking, remembering and
 forgetting the ROM, whether the build ships its game data, and starting the game.
+com.recomp.n64 registers one per game package (`N64Launcher`); com.recomp.ps1 registers one per
+game in its addon (`Ps1Launcher`: the "ROM" is the disc image, checked by what its SYSTEM.CNF boots).
 
 ### 4. Script it (optional)
 

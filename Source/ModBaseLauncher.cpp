@@ -8,6 +8,7 @@
 
 #include "ModBaseModMap.h"
 #include "ModBaseSettings.h"
+#include "ModBaseUtil.h"
 #include "ModBaseWidgets.h"
 
 #include "AssetManager.h"
@@ -40,12 +41,6 @@ std::vector<RecompLauncher*>& Nodes()
 {
     static std::vector<RecompLauncher*> sNodes;
     return sNodes;
-}
-
-std::string FileName(const std::string& path)
-{
-    const size_t slash = path.find_last_of("/\\");
-    return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
 bool IsInside(Node* node, Node* ancestor)
@@ -122,7 +117,7 @@ bool RecompLauncher_Token(const std::string& name, std::string& out)
     else if (name == "romfile")
     {
         const std::string rom = game->GetRomLocation();
-        out = rom.empty() ? std::string(game->HasShippedData() ? "Game data included" : "No ROM chosen") : FileName(rom);
+        out = rom.empty() ? std::string(game->HasShippedData() ? "Game data included" : "No ROM chosen") : RecompUtil::FileName(rom);
     }
     else if (name == "message") out = node != nullptr ? node->GetMessage() : game->LastMessage();
     else if (name == "status") out = node != nullptr ? node->GetStatus() : (game->IsStarted() ? "running" : "idle");
