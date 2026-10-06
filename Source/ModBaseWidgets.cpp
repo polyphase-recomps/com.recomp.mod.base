@@ -201,6 +201,51 @@ void CloseMenu(Node* from)
     }
 }
 
+// The engine's Button selects whatever button is under the mouse pointer, every frame: a pointer
+// left resting on a button (a wide one in the middle of the window) took the selection back
+// from the gamepad each frame, and moving down got stuck there. Buttons follow the pointer
+// only while it is in use: it moved, clicked or scrolled since the last gamepad / arrow key.
+bool PointerInUse()
+{
+    static uint32_t sFrame = UINT32_MAX;
+    static bool sInUse = true;
+    static bool sHavePos = false;
+    static int32_t sX = 0;
+    static int32_t sY = 0;
+    EngineState* engine = GetEngineState();
+    const uint32_t frame = engine != nullptr ? engine->mFrameNumber : 0;
+    if (frame == sFrame)
+    {
+        return sInUse;
+    }
+    sFrame = frame;
+    int32_t x = 0;
+    int32_t y = 0;
+    INP_GetMousePosition(x, y);
+    const bool moved = sHavePos && (x != sX || y != sY);
+    sHavePos = true;
+    sX = x;
+    sY = y;
+    if (moved || INP_IsPointerJustDown(0) || INP_IsMouseButtonJustDown(MOUSE_RIGHT) || INP_GetScrollWheelDelta() != 0)
+    {
+        sInUse = true;
+        return sInUse;
+    }
+    for (int32_t b = 0; b < GAMEPAD_BUTTON_COUNT && sInUse; ++b)
+    {
+        if (INP_IsGamepadButtonJustDown(b, 0))
+        {
+            sInUse = false;
+        }
+    }
+    if (INP_IsKeyJustDown(POLYPHASE_KEY_UP) || INP_IsKeyJustDown(POLYPHASE_KEY_DOWN) ||
+        INP_IsKeyJustDown(POLYPHASE_KEY_LEFT) || INP_IsKeyJustDown(POLYPHASE_KEY_RIGHT))
+    {
+        sInUse = false;
+    }
+    return sInUse;
+}
+
 // The first button in a subtree, skipping hidden widgets (they don't tick, so a hidden
 // selected button would leave the gamepad stuck).
 Button* FirstVisibleButton(Node* node)
@@ -471,7 +516,14 @@ void RecompButton::Activate()
 
 void RecompButton::Tick(float deltaTime)
 {
+    // the pointer only hovers / clicks while it is in use (see PointerInUse)
+    const bool handleMouse = sHandleMouseInput;
+    if (!PointerInUse())
+    {
+        sHandleMouseInput = false;
+    }
     Button::Tick(deltaTime);
+    sHandleMouseInput = handleMouse;
     const bool selected = Button::GetSelectedButton() == this;
     if (selected != mHighlighted)
     {
