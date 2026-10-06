@@ -428,6 +428,11 @@ void Recomp_SetInputBlocked(bool blocked)
     sInputBlocked = blocked;
 }
 
+bool Recomp_PointerInUse()
+{
+    return PointerInUse();
+}
+
 // ---- RecompText --------------------------------------------------------------------------
 void RecompText::Tick(float deltaTime)
 {
@@ -1070,7 +1075,7 @@ void RecompMenuController::Tick(float deltaTime)
         selected = (first != nullptr && first->IsVisible(true)) ? first : FirstVisibleButton(target);
         Button::SetSelectedButton(selected);
     }
-    if (selected != nullptr)
+    if (selected != nullptr && !PointerInUse())
     {
         KeepInView(selected, target);
     }

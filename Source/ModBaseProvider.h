@@ -127,6 +127,11 @@ MODBASE_API const std::vector<RecompProvider*>& Recomp_Providers();
 // input then.
 MODBASE_API bool Recomp_IsInputCaptured();
 MODBASE_API void Recomp_SetInputBlocked(bool blocked);
+// The mouse pointer is in use: it moved, clicked or scrolled since the last gamepad button or
+// arrow key. Buttons only follow the pointer then, and menus only scroll to the selected button
+// when it is not (the selection follows the gamepad; scrolling under a resting pointer would
+// select the button that moves under it, and so on).
+MODBASE_API bool Recomp_PointerInUse();
 
 MODBASE_API const char* Recomp_TypeName(RecompType type);
 MODBASE_API RecompType Recomp_ParseType(const std::string& name); // "s32", "u8", "f32", "str"
