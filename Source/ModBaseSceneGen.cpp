@@ -141,30 +141,25 @@ bool IsOutdatedPanel(Node* panel)
     return false;
 }
 
-AssetDir* SceneDir(const std::string& game, std::string& outError)
+// Generated scenes go to the project's own Assets/Scenes (not the game package, which is a
+// shared, git-managed package): they belong to the project that uses them.
+AssetDir* SceneDir(std::string& outError)
 {
     AssetManager* am = AssetManager::Get();
     AssetDir* project = am ? am->FindProjectDirectory() : nullptr;
-    AssetDir* packages = (project && project->mParentDir) ? project->mParentDir->GetSubdirectory("Packages") : nullptr;
-    AssetDir* gameDir = packages ? packages->GetSubdirectory(game) : nullptr;
-    if (gameDir == nullptr)
+    if (project == nullptr)
     {
-        // a game without a package (or an unknown id): the project's own Assets
-        gameDir = project;
-        if (gameDir == nullptr)
-        {
-            outError = "No project is open.";
-            return nullptr;
-        }
+        outError = "No project is open.";
+        return nullptr;
     }
-    AssetDir* scenes = gameDir->GetSubdirectory("Scenes");
+    AssetDir* scenes = project->GetSubdirectory("Scenes");
     if (scenes == nullptr)
     {
-        scenes = gameDir->CreateSubdirectory("Scenes");
+        scenes = project->CreateSubdirectory("Scenes");
     }
     if (scenes == nullptr)
     {
-        outError = "Cannot create the Scenes folder in " + gameDir->mPath;
+        outError = "Cannot create the Scenes folder in " + project->mPath;
     }
     return scenes;
 }
@@ -448,7 +443,7 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     if (!updating)
     {
         std::string error;
-        AssetDir* dir = SceneDir(map->mGame, error);
+        AssetDir* dir = SceneDir(error);
         if (dir == nullptr)
         {
             outMessage = error;
@@ -705,7 +700,7 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
     if (!updating)
     {
         std::string error;
-        AssetDir* dir = SceneDir(map->mGame, error);
+        AssetDir* dir = SceneDir(error);
         if (dir == nullptr)
         {
             outMessage = error;

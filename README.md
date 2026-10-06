@@ -99,7 +99,7 @@ It's the quickest way to find what a cheat should poke.
 
 **Tools > Recomp > Mods > Generate Mod Settings Scene...** (or **Generate Scene...** in the
 map editor). Pick the map, a scene name (default `SC_<Title>ModSettings`), the panel
-position and the button that opens it. It is saved in `Packages/<game>/Assets/Scenes/`.
+position and the button that opens it. It is saved in the project's `Assets/Scenes/`.
 
 The scene contains:
 
@@ -168,7 +168,7 @@ map, then customize:
 | **Panel and buttons** | Panel size, Position (centre / left / right), each button's label, and whether Forget ROM, Mods and Quit are shown |
 | **Starting the game** | **Game Scene**: the scene with the game's player node, opened once the game starts. **Start at once when the ROM is known**: later launches go straight to the game |
 
-**Generate Scene** makes `SC_<Title>Launcher` in `Packages/<game>/Assets/Scenes`:
+**Generate Scene** makes `SC_<Title>Launcher` in the project's `Assets/Scenes`:
 - a background;
 - a panel with the logo, title, subtitle and ROM line;
 - what happened last;

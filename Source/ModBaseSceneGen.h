@@ -26,7 +26,7 @@
  * toggle button (default Select), a PlayerInput action or the HOME menu. The "Open with"
  * choice is applied on every run, also when updating an existing scene.
  *
- * Saved as Packages/<game>/Assets/Scenes/<scene name>.oct. Running it again updates
+ * Saved as Assets/Scenes/<scene name>.oct (the project's). Running it again updates
  * that scene without touching what is already there (nodes are matched by name):
  * new entries get rows, edited rows stay as they are. A scene made by the first,
  * fixed-size version (no Panel/Layout) gets its panel rebuilt.
@@ -58,7 +58,7 @@ MODBASE_API bool ModScene_ApplyStyle(ModMap* map, const std::string& sceneName, 
 // Restyles the settings UIs open in the editor (live preview); returns how many.
 MODBASE_API int ModScene_RestyleOpen(const ModStyle& style);
 
-// The game's launcher scene (ModBaseLauncher.h), Packages/<game>/Assets/Scenes/<name>.oct:
+// The game's launcher scene (ModBaseLauncher.h), Assets/Scenes/<name>.oct (the project's):
 //
 //   Launcher (Canvas)
 //     Background (Quad)               full screen: the launcher's background picture / color
