@@ -21,6 +21,8 @@ What it gives you:
 - **A resolution scaler** for every player node: Fit, Integer, Native, Full Screen, Scale
   ×N, sharp or smooth filtering, window sizes on Windows.
 - **Lua**: `Recomp.*` (the running game, any runtime) and `Mods.*` (the settings).
+- **A launcher**: a generated, customizable front-end scene (ROM, mods, Play) for every
+  runtime that registers its games, plus the `RecompLauncher` node and Lua to build your own.
 - **Widgets** for your own UIs: `RecompText`, `RecompButton`, `RecompBar`,
   `RecompMenuController`.
 
@@ -151,7 +153,65 @@ Textures and fonts are picked from a filterable list, or dragged from the asset 
 the style and restyles the scene asset (layout and navigation untouched). The same
 restyle is available to code as `ModStyle_Apply(root, style)`.
 
-### 3. Script it (optional)
+### 3. A launcher (optional)
+
+A front-end scene the game opens with. The player sets their ROM up, opens the mods and
+presses Play. It works for every runtime that registers its games as launchers (N64 does).
+
+**Tools > Recomp > Mods > Launcher** (or **Launcher** on the Mod Map's inspector). Pick the
+map, then customize:
+
+| Section | Settings |
+|---|---|
+| **Text** | Title (empty = the map's title), Subtitle |
+| **Pictures** | Logo and its size, Background picture and tint |
+| **Panel and buttons** | Panel size, Position (centre / left / right), each button's label, and whether Forget ROM, Mods and Quit are shown |
+| **Starting the game** | **Game Scene**: the scene with the game's player node, opened once the game starts. **Start at once when the ROM is known**: later launches go straight to the game |
+
+**Generate Scene** makes `SC_<Title>Launcher` in `Packages/<game>/Assets/Scenes`:
+- a background;
+- a panel with the logo, title, subtitle and ROM line;
+- what happened last;
+- the buttons Play, Choose ROM..., Forget ROM, Mods and Quit.
+
+The panel, buttons and fonts follow the **Menu Style**; everything else follows these settings.
+
+**Update Scene** applies the settings again and keeps the nodes you changed or added, as the
+settings scene does. **Live preview** updates a launcher open in the editor as you edit.
+
+Generate the Mod Settings scene first: the launcher's **Mods** button opens it. The launcher
+adds it to its scene itself (its node's **Mods Scene**). Make the launcher scene the one the
+project opens with.
+
+What it's made of (all usable in your own UIs, no script needed):
+- **`RecompLauncher`** node, put in the UI's root. Properties:
+  - **Game**: a package id; empty = the only game;
+  - **Game Scene**;
+  - **Mods Scene**;
+  - **Auto Start**;
+  - **Load Mods**: the game's mod settings work before it runs.
+
+  Play shows "Starting..." for a frame before it starts the game, because a live recompile takes about half a second. A script on the node gets `OnRomChosen(node, path, ok)`, `OnGameStarted(node)` and `OnGameStartFailed(node, message)`, and the matching signals.
+- **`RecompButton` Settings**:
+  - `@launcher:play`;
+  - `@launcher:browse`: a file dialog, then it checks and remembers the ROM;
+  - `@launcher:forget`;
+  - `@launcher:mods`;
+  - `@launcher:quit`: packaged games only.
+- **`RecompText` tokens**:
+  - `{@launcher.title}`;
+  - `{@launcher.rom}` (the path);
+  - `{@launcher.romfile}` (the file name, or "No ROM chosen");
+  - `{@launcher.message}`;
+  - `{@launcher.status}` (idle / starting / running / failed);
+  - `{@launcher.ready}`.
+- **`RecompMenuController` Close On Back**: off for a UI that must stay open. A UI opened over another one, such as the mods over the launcher, has the gamepad until it closes.
+
+A runtime supports launching by registering a `RecompGameLauncher` per game
+(`Source/ModBaseLauncher.h`) with `Recomp_RegisterLauncher`. It covers checking, remembering and
+forgetting the ROM, whether the build ships its game data, and starting the game.
+
+### 4. Script it (optional)
 
 ```lua
 -- any runtime
@@ -176,6 +236,14 @@ Mods.Open()                        -- the generated settings menu
 | `Read(addr or symbol, type)` / `Write(...)` | Raw memory (PS1, GameCube), `type` `"s32"`, `"u8"`, `"f32"`... |
 | `Variables()` / `Requests()` | Lists with name, type, count, help |
 | `SetInputBlocked(b)` / `IsInputBlocked()` | Keep the gamepad away from the game (your own menus) |
+| `Games()` | The games that can be launched: package, title, runtime, rom, started |
+| `SetRomLocation(path [, game])` | Checks the ROM and remembers it: ok, message |
+| `GetRomLocation([game])` / `ClearRomLocation([game])` | The remembered ROM (nil if none) / forget it |
+| `CheckRom(path [, game])` | ok, message; nothing saved |
+| `BrowseForRom()` | A file dialog: the path, or nil |
+| `LoadMods([game])` | The game's mod settings, so `Mods.*` works before it runs |
+| `StartGame([game])` (also `StartRecomp`) | Starts the game now: ok, message |
+| `IsStarted([game])` / `LaunchStatus([game])` | Started? / "idle" or "running" and the last message |
 
 | `Mods.` | |
 |---|---|

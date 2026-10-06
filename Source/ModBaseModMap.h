@@ -103,6 +103,31 @@ struct ModStyle
     float mNoteSize = 13.0f;
 };
 
+// The game's launcher (Tools > Recomp > Mods > Launcher): the front-end scene that sets the
+// ROM up, opens the mod settings and starts the game. Its buttons and text use the menu style
+// above; these are the launcher's own look and behaviour. Applied on every Generate / Update.
+struct ModLauncherSettings
+{
+    std::string mTitle;                                   // "" = the map's title
+    std::string mSubtitle;                                // a line under the title
+    AssetRef mLogo;                                       // a picture above the title (none = no logo)
+    glm::vec2 mLogoSize = {320.0f, 120.0f};
+    AssetRef mBackground;                                 // full-screen picture behind the panel
+    glm::vec4 mBackgroundColor = {0.0f, 0.0f, 0.0f, 1.0f}; // its tint (or the fill without one)
+    glm::vec2 mPanelSize = {440.0f, 460.0f};              // largest panel size (it fits smaller screens)
+    int32_t mPosition = 0;                                // 0 centre, 1 left, 2 right
+    std::string mPlayLabel = "Play";
+    std::string mBrowseLabel = "Choose ROM...";
+    std::string mForgetLabel = "Forget ROM";
+    std::string mModsLabel = "Mods";
+    std::string mQuitLabel = "Quit";
+    bool mShowForget = false;
+    bool mShowMods = true;
+    bool mShowQuit = true;
+    AssetRef mGameScene;                                  // opened once the game starts (none = stay)
+    bool mAutoStart = false;                              // start at once when the game has its ROM
+};
+
 class MODBASE_API ModMap : public Asset
 {
 public:
@@ -124,6 +149,7 @@ public:
     std::vector<std::string> mGroups; // display order of groups
     std::vector<ModEntry> mEntries;
     ModStyle mStyle;
+    ModLauncherSettings mLauncher;
 
     const ModEntry* Find(const std::string& id) const;
     ModEntry* Find(const std::string& id);

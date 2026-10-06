@@ -14,6 +14,18 @@
  *   Recomp.SetInputBlocked(bool)   keep the gamepad away from the game (a script's own menu)
  *   Recomp.IsInputBlocked()
  *
+ *   Launching (ModBaseLauncher.h; `game` = a package id, optional: else the only / first game):
+ *   Recomp.Games()                      { {package=, title=, runtime=, rom=, started=}, ... }
+ *   Recomp.SetRomLocation(path [, game])  checks the ROM and remembers it: ok, message
+ *   Recomp.GetRomLocation([game])       the remembered ROM, or nil
+ *   Recomp.ClearRomLocation([game])
+ *   Recomp.CheckRom(path [, game])      ok, message (nothing saved)
+ *   Recomp.BrowseForRom()               a file dialog: the path, or nil
+ *   Recomp.LoadMods([game])             the game's mod settings, so Mods.* works before it runs
+ *   Recomp.StartGame([game])            starts it now: ok, message (also Recomp.StartRecomp)
+ *   Recomp.IsStarted([game])
+ *   Recomp.LaunchStatus([game])         "idle" / "running", and the last start's message
+ *
  *   Mods.Get(id)        the setting's value (number), nil if unknown
  *   Mods.Text(id)       as shown in menus ("ON", "Fit", "3")
  *   Mods.Set(id, v)     sets it (and writes it to the game)

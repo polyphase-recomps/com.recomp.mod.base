@@ -10,6 +10,7 @@
  *   - ModSettings: the end user's values, applied to the game and saved (ModBaseSettings.h)
  *   - a generated Mod Settings UI scene (ModBaseSceneGen.h) built from Recomp* widgets
  *   - the resolution scaler players use (ModBaseDisplay.h)
+ *   - game launchers and a generated Launcher scene (ModBaseLauncher.h)
  *   - Lua tables Recomp and Mods (ModBaseLua.h)
  */
 
@@ -20,6 +21,7 @@
 #endif
 
 #include "ModBaseEditor.h"
+#include "ModBaseLauncher.h"
 #include "ModBaseLua.h"
 #include "ModBaseModMap.h"
 #include "ModBaseSettings.h"
@@ -35,6 +37,7 @@ static int OnLoad(PolyphaseEngineAPI* api)
     FORCE_LINK_CALL(RecompButton);
     FORCE_LINK_CALL(RecompBar);
     FORCE_LINK_CALL(RecompMenuController);
+    FORCE_LINK_CALL(RecompLauncher);
     if (api && api->LogDebug)
     {
         api->LogDebug("com.recomp.mod.base loaded");

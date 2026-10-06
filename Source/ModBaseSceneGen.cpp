@@ -7,6 +7,7 @@
 
 #if EDITOR
 
+#include "ModBaseLauncher.h"
 #include "ModBaseModMap.h"
 #include "ModBaseSettings.h"
 #include "ModBaseUiBuilder.h"
@@ -542,5 +543,226 @@ bool ModScene_ApplyStyle(ModMap* map, const std::string& sceneName, std::string&
     LogDebug("Mods: %s", outMessage.c_str());
     return true;
 }
+
+// ---- launcher ----------------------------------------------------------------------------------
+namespace
+{
+const float kLauncherButtonH = 34.0f;
+const float kLauncherGap = 8.0f;
+
+// The scene asset of that name opened for updating, or a new root; `updating` says which.
+NodePtr OpenOrCreate(const std::string& sceneName, AssetStub*& stub, Scene*& scene, bool& updating,
+                     const char* rootName, std::string& outMessage)
+{
+    stub = FetchAssetStub(sceneName);
+    scene = nullptr;
+    if (stub != nullptr && stub->mType != Scene::GetStaticType())
+    {
+        outMessage = "An asset named " + sceneName + " exists and is not a Scene.";
+        return NodePtr();
+    }
+    NodePtr root;
+    if (stub != nullptr)
+    {
+        scene = LoadAsset<Scene>(sceneName);
+        if (scene != nullptr) root = scene->Instantiate();
+    }
+    updating = root.Get() != nullptr;
+    if (!updating)
+    {
+        SharedPtr<Canvas> canvas = Node::Construct<Canvas>();
+        canvas->SetName(rootName);
+        canvas->SetFullScreen();
+        root = PtrStaticCast<Node>(canvas);
+    }
+    return root;
+}
+
+int RestyleLaunchers(Node* node, const ModMap& map)
+{
+    if (node == nullptr) return 0;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        if (node->GetChild((int32_t)i)->As<RecompLauncher>() != nullptr)
+        {
+            ModLauncher_ApplyLook(node, map);
+            return 1;
+        }
+    }
+    int count = 0;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        count += RestyleLaunchers(node->GetChild((int32_t)i), map);
+    }
+    return count;
+}
+}
+
+std::string ModLauncher_DefaultName(const ModMap* map)
+{
+    std::string name = ModScene_DefaultName(map);
+    const size_t at = name.rfind("ModSettings");
+    if (at != std::string::npos) name.resize(at);
+    return name + "Launcher";
+}
+
+bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::string& outMessage)
+{
+    if (map == nullptr)
+    {
+        outMessage = "No Mod Map selected.";
+        return false;
+    }
+    const std::string sceneName = sceneNameIn.empty() ? ModLauncher_DefaultName(map) : sceneNameIn;
+    AssetStub* stub = nullptr;
+    Scene* scene = nullptr;
+    bool updating = false;
+    NodePtr root = OpenOrCreate(sceneName, stub, scene, updating, "Launcher", outMessage);
+    if (root.Get() == nullptr)
+    {
+        return false;
+    }
+    if (root->As<Widget>() == nullptr)
+    {
+        outMessage = sceneName + "'s root is not a widget: left as it is.";
+        return false;
+    }
+    const ModLauncherSettings& l = map->mLauncher;
+
+    Builder b;
+    b.Ensure<Quad>(root.Get(), "Background", [&](Quad* q) { Full(q); });
+    Quad* panel = b.Ensure<Quad>(root.Get(), "Panel", [&](Quad* q) {
+        Full(q);
+        q->SetColor(kPanelColor);
+    });
+    if (panel == nullptr)
+    {
+        outMessage = "Panel exists but is not a Quad: left as it is.";
+        return false;
+    }
+    Widget* layout = Array(b, panel, "Layout", false, kLauncherGap, 16.0f, Filled(), true);
+    if (layout == nullptr)
+    {
+        outMessage = "Panel/Layout exists but is not an ArrayWidget (or the engine has none): left as it is.";
+        return false;
+    }
+    b.Ensure<Quad>(layout, "Logo", [&](Quad* q) { Place(q, 0, 0, l.mLogoSize.x, l.mLogoSize.y); });
+    auto centred = [](Text* t) {
+        if (t != nullptr) t->SetHorizontalJustification(Justification::Center);
+    };
+    centred(Label(b, layout, "Title", "Game", FullWidth(40.0f), 28.0f, kHeaderColor));
+    centred(Label(b, layout, "Subtitle", "", FullWidth(22.0f), kFontSize, kDimColor));
+    centred(Bound(b, layout, "Rom", "{@launcher.romfile}", FullWidth(24.0f), kFontSize, kHeaderColor));
+    centred(Bound(b, layout, "Message", "{@launcher.message}", FullWidth(40.0f), 13.0f, kDimColor));
+
+    Widget* buttons = Array(b, layout, "Buttons", false, 6.0f, 0.0f, FullWidth(5 * (kLauncherButtonH + 6.0f)));
+    RecompButton* play = SettingButton(b, buttons, "Play", "Play", "@launcher:play", 1, FullWidth(kLauncherButtonH));
+    RecompButton* browse = SettingButton(b, buttons, "Browse", "Choose ROM...", "@launcher:browse", 1, FullWidth(kLauncherButtonH));
+    RecompButton* forget = SettingButton(b, buttons, "Forget", "Forget ROM", "@launcher:forget", 1, FullWidth(kLauncherButtonH));
+    RecompButton* mods = SettingButton(b, buttons, "Mods", "Mods", "@launcher:mods", 1, FullWidth(kLauncherButtonH));
+    RecompButton* quit = SettingButton(b, buttons, "Quit", "Quit", "@launcher:quit", 1, FullWidth(kLauncherButtonH));
+    // the labels are launcher settings, not formats
+    for (RecompButton* btn : {play, browse, forget, mods, quit})
+    {
+        if (btn != nullptr) btn->SetLabelFormat("");
+    }
+    LinkNavigation({{play}, {browse}, {forget}, {mods}, {quit}});
+
+    RecompMenuController* controller = b.Ensure<RecompMenuController>(root.Get(), "MenuController", [&](RecompMenuController* c) {
+        Place(c, 0.0f, 0.0f, 0.0f, 0.0f);
+        c->Setup(map->mTitle.empty() ? std::string("Launcher") : map->mTitle + " launcher", true, true, play);
+    });
+    if (controller != nullptr)
+    {
+        // always shown, the gamepad moves over its buttons, B doesn't close it
+        controller->SetPanel(panel);
+        controller->SetInHomeMenu(false);
+        controller->SetToggleButton(-1);
+        controller->SetCloseOnBack(false);
+        root->SetVisible(true);
+    }
+    RecompLauncher* launcher = b.Ensure<RecompLauncher>(root.Get(), "Launcher", [&](RecompLauncher* n) {
+        Place(n, 0.0f, 0.0f, 0.0f, 0.0f);
+    });
+    std::string modsNote;
+    if (launcher != nullptr)
+    {
+        const std::string modsScene = ModScene_DefaultName(map);
+        AssetStub* modsStub = FetchAssetStub(modsScene);
+        if (modsStub != nullptr && modsStub->mType == Scene::GetStaticType())
+        {
+            launcher->SetModsScene(AssetRef(LoadAsset<Scene>(modsScene)));
+        }
+        else if (l.mShowMods)
+        {
+            modsNote = " Generate the Mod Settings scene too (the Mods button opens it), then Update this.";
+        }
+    }
+
+    // the map's look (menu style + launcher settings) over everything generated or kept
+    ModLauncher_ApplyLook(root.Get(), *map);
+
+    if (!updating)
+    {
+        std::string error;
+        AssetDir* dir = SceneDir(map->mGame, error);
+        if (dir == nullptr)
+        {
+            outMessage = error;
+            return false;
+        }
+        stub = EditorAddUniqueAsset(sceneName.c_str(), dir, Scene::GetStaticType(), true);
+        scene = (stub && stub->mAsset) ? stub->mAsset->As<Scene>() : nullptr;
+        if (scene == nullptr)
+        {
+            outMessage = "Cannot create the Scene asset " + sceneName;
+            return false;
+        }
+    }
+    scene->Capture(root.Get());
+    AssetManager::Get()->SaveAsset(*stub);
+    outMessage = std::string(updating ? "Updated " : "Created ") + stub->mName + ": " + std::to_string(b.added) +
+                 " node(s) added" + (updating ? ", " + std::to_string(b.kept) + " kept as they were" : std::string()) +
+                 ". Make it the scene the game opens with, and pick the Game Scene in the Launcher window." + modsNote;
+    LogDebug("Mods: %s", outMessage.c_str());
+    return true;
+}
+
+int ModLauncher_RestyleOpen(const ModMap& map)
+{
+    World* world = GetWorld(0);
+    return world != nullptr ? RestyleLaunchers(world->GetRootNode(), map) : 0;
+}
+
+bool ModLauncher_ApplyLookToScene(ModMap* map, const std::string& sceneName, std::string& outMessage)
+{
+    if (map == nullptr)
+    {
+        outMessage = "No Mod Map selected.";
+        return false;
+    }
+    const std::string name = sceneName.empty() ? ModLauncher_DefaultName(map) : sceneName;
+    AssetStub* stub = FetchAssetStub(name);
+    Scene* scene = (stub != nullptr && stub->mType == Scene::GetStaticType()) ? LoadAsset<Scene>(name) : nullptr;
+    if (scene == nullptr)
+    {
+        outMessage = "No scene " + name + ": generate it first.";
+        return false;
+    }
+    NodePtr root = scene->Instantiate();
+    if (root.Get() == nullptr)
+    {
+        outMessage = "Cannot open the scene " + name + ".";
+        return false;
+    }
+    ModLauncher_ApplyLook(root.Get(), *map);
+    scene->Capture(root.Get());
+    AssetManager::Get()->SaveAsset(*stub);
+    const int live = ModLauncher_RestyleOpen(*map);
+    outMessage = "Updated the look of " + name + (live > 0 ? " and " + std::to_string(live) + " launcher(s) open in the editor." : ".");
+    LogDebug("Mods: %s", outMessage.c_str());
+    return true;
+}
+
 
 #endif

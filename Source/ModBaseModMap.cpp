@@ -18,8 +18,8 @@ DEFINE_ASSET(ModMap);
 namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
-// to ASSET_VERSION_*). 2: the menu style.
-constexpr uint32_t kModMapVersion = 2;
+// to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
+constexpr uint32_t kModMapVersion = 3;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -69,6 +69,49 @@ void WriteStyle(Stream& stream, const ModStyle& s)
     stream.WriteVec4(s.mValueColor);
     stream.WriteFloat(s.mValueSize);
     stream.WriteFloat(s.mNoteSize);
+}
+
+void ReadLauncher(Stream& stream, ModLauncherSettings& l)
+{
+    stream.ReadString(l.mTitle);
+    stream.ReadString(l.mSubtitle);
+    stream.ReadAsset(l.mLogo);
+    l.mLogoSize = stream.ReadVec2();
+    stream.ReadAsset(l.mBackground);
+    l.mBackgroundColor = stream.ReadVec4();
+    l.mPanelSize = stream.ReadVec2();
+    l.mPosition = stream.ReadInt32();
+    stream.ReadString(l.mPlayLabel);
+    stream.ReadString(l.mBrowseLabel);
+    stream.ReadString(l.mForgetLabel);
+    stream.ReadString(l.mModsLabel);
+    stream.ReadString(l.mQuitLabel);
+    const uint8_t flags = stream.ReadUint8();
+    l.mShowForget = (flags & 1) != 0;
+    l.mShowMods = (flags & 2) != 0;
+    l.mShowQuit = (flags & 4) != 0;
+    l.mAutoStart = (flags & 8) != 0;
+    stream.ReadAsset(l.mGameScene);
+}
+
+void WriteLauncher(Stream& stream, const ModLauncherSettings& l)
+{
+    stream.WriteString(l.mTitle);
+    stream.WriteString(l.mSubtitle);
+    stream.WriteAsset(l.mLogo);
+    stream.WriteVec2(l.mLogoSize);
+    stream.WriteAsset(l.mBackground);
+    stream.WriteVec4(l.mBackgroundColor);
+    stream.WriteVec2(l.mPanelSize);
+    stream.WriteInt32(l.mPosition);
+    stream.WriteString(l.mPlayLabel);
+    stream.WriteString(l.mBrowseLabel);
+    stream.WriteString(l.mForgetLabel);
+    stream.WriteString(l.mModsLabel);
+    stream.WriteString(l.mQuitLabel);
+    stream.WriteUint8((uint8_t)((l.mShowForget ? 1 : 0) | (l.mShowMods ? 2 : 0) | (l.mShowQuit ? 4 : 0) |
+                                (l.mAutoStart ? 8 : 0)));
+    stream.WriteAsset(l.mGameScene);
 }
 }
 
@@ -146,6 +189,11 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadStyle(stream, mStyle);
     }
+    mLauncher = ModLauncherSettings();
+    if (version >= 3)
+    {
+        ReadLauncher(stream, mLauncher);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -195,6 +243,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
         stream.WriteUint8((uint8_t)((e.mPersist ? 1 : 0) | (e.mLock ? 2 : 0) | (e.mOnTitle ? 4 : 0)));
     }
     WriteStyle(stream, mStyle);
+    WriteLauncher(stream, mLauncher);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)

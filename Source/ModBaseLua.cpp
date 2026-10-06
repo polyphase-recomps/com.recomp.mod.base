@@ -6,6 +6,7 @@
 
 #include "ModBaseLua.h"
 
+#include "ModBaseLauncher.h"
 #include "ModBaseProvider.h"
 #include "ModBaseSettings.h"
 #include "ModBaseWidgets.h"
@@ -202,6 +203,125 @@ int R_IsInputBlocked(lua_State* L)
     return 1;
 }
 
+// ---- Recomp: launching (ModBaseLauncher.h) -----------------------------------------------
+// The game the call names (last argument, optional), else the first launcher registered.
+RecompGameLauncher* LauncherArg(lua_State* L, int arg)
+{
+    if (sApi->Lua_gettop(L) >= arg && sApi->Lua_type(L, arg) == kLuaTString)
+    {
+        return Recomp_FindLauncher(sApi->Lua_tostring(L, arg));
+    }
+    return Recomp_FindLauncher();
+}
+
+int PushResult(lua_State* L, bool ok, const std::string& message)
+{
+    sApi->Lua_pushboolean(L, ok);
+    sApi->Lua_pushstring(L, message.c_str());
+    return 2;
+}
+
+int NoLauncher(lua_State* L)
+{
+    return PushResult(L, false, "no game to launch (its runtime registers none)");
+}
+
+int R_Games(lua_State* L)
+{
+    const std::vector<RecompGameLauncher*>& all = Recomp_Launchers();
+    sApi->Lua_createtable(L, (int)all.size(), 0);
+    for (size_t i = 0; i < all.size(); ++i)
+    {
+        RecompGameLauncher* g = all[i];
+        sApi->Lua_pushinteger(L, (long long)i + 1);
+        sApi->Lua_createtable(L, 0, 5);
+        SetField(L, "package", g->GamePackage());
+        SetField(L, "title", g->GameTitle());
+        SetField(L, "runtime", g->RuntimeId());
+        SetField(L, "rom", g->GetRomLocation());
+        sApi->Lua_pushboolean(L, g->IsStarted());
+        sApi->Lua_setfield(L, -2, "started");
+        sApi->Lua_rawset(L, -3);
+    }
+    return 1;
+}
+
+int R_SetRomLocation(lua_State* L)
+{
+    const std::string path = sApi->LuaL_checkstring(L, 1);
+    RecompGameLauncher* g = LauncherArg(L, 2);
+    if (g == nullptr) return NoLauncher(L);
+    std::string message;
+    const bool ok = g->SetRomLocation(path, message);
+    return PushResult(L, ok, message);
+}
+
+int R_CheckRom(lua_State* L)
+{
+    const std::string path = sApi->LuaL_checkstring(L, 1);
+    RecompGameLauncher* g = LauncherArg(L, 2);
+    if (g == nullptr) return NoLauncher(L);
+    std::string message;
+    const bool ok = g->CheckRom(path, message);
+    return PushResult(L, ok, message);
+}
+
+int R_GetRomLocation(lua_State* L)
+{
+    RecompGameLauncher* g = LauncherArg(L, 1);
+    const std::string path = g != nullptr ? g->GetRomLocation() : std::string();
+    if (path.empty()) sApi->Lua_pushnil(L);
+    else sApi->Lua_pushstring(L, path.c_str());
+    return 1;
+}
+
+int R_ClearRomLocation(lua_State* L)
+{
+    if (RecompGameLauncher* g = LauncherArg(L, 1)) g->ClearRomLocation();
+    return 0;
+}
+
+int R_BrowseForRom(lua_State* L)
+{
+    const std::string path = Recomp_BrowseForFile();
+    if (path.empty()) sApi->Lua_pushnil(L);
+    else sApi->Lua_pushstring(L, path.c_str());
+    return 1;
+}
+
+int R_LoadMods(lua_State* L)
+{
+    RecompGameLauncher* g = LauncherArg(L, 1);
+    sApi->Lua_pushboolean(L, g != nullptr && Recomp_LoadMods(g->GamePackage()));
+    return 1;
+}
+
+int R_StartGame(lua_State* L)
+{
+    RecompGameLauncher* g = LauncherArg(L, 1);
+    if (g == nullptr) return NoLauncher(L);
+    if (ModSettings::Get().GetMap() != nullptr) ModSettings::Get().Save();
+    std::string message;
+    const bool ok = g->StartGame(message);
+    return PushResult(L, ok, message);
+}
+
+int R_IsStarted(lua_State* L)
+{
+    RecompGameLauncher* g = LauncherArg(L, 1);
+    sApi->Lua_pushboolean(L, g != nullptr && g->IsStarted());
+    return 1;
+}
+
+int R_LaunchStatus(lua_State* L)
+{
+    RecompGameLauncher* g = LauncherArg(L, 1);
+    if (g == nullptr) return NoLauncher(L);
+    sApi->Lua_pushstring(L, g->IsStarted() ? "running" : "idle");
+    sApi->Lua_pushstring(L, g->LastMessage().c_str());
+    return 2;
+}
+
 // ---- Mods --------------------------------------------------------------------------------
 int M_Get(lua_State* L)
 {
@@ -266,15 +386,7 @@ int M_List(lua_State* L)
 
 RecompMenuController* SettingsMenu()
 {
-    // the generated scene's controller: the one whose UI has "Pages" (else the first)
-    RecompMenuController* first = nullptr;
-    for (RecompMenuController* c : RecompMenuController::GetAll())
-    {
-        if (first == nullptr) first = c;
-        Node* root = c->GetParent();
-        if (root != nullptr && root->FindChild("Pages", true) != nullptr) return c;
-    }
-    return first;
+    return RecompMenuController::FindSettingsMenu();
 }
 
 int M_Open(lua_State*)
@@ -309,9 +421,16 @@ void ModBaseLua::Register(lua_State* L, PolyphaseEngineAPI* api)
         {"Set", R_Set},             {"Request", R_Request}, {"Result", R_Result},
         {"Read", R_Read},           {"Write", R_Write},     {"Variables", R_Variables},
         {"Requests", R_Requests},   {"SetInputBlocked", R_SetInputBlocked},
-        {"IsInputBlocked", R_IsInputBlocked}, {nullptr, nullptr},
+        {"IsInputBlocked", R_IsInputBlocked},
+        // launching
+        {"Games", R_Games},                 {"SetRomLocation", R_SetRomLocation},
+        {"GetRomLocation", R_GetRomLocation}, {"ClearRomLocation", R_ClearRomLocation},
+        {"CheckRom", R_CheckRom},           {"BrowseForRom", R_BrowseForRom},
+        {"LoadMods", R_LoadMods},           {"StartGame", R_StartGame},
+        {"StartRecomp", R_StartGame},       {"IsStarted", R_IsStarted},
+        {"LaunchStatus", R_LaunchStatus},   {nullptr, nullptr},
     };
-    sApi->Lua_createtable(L, 0, 12);
+    sApi->Lua_createtable(L, 0, 23);
     sApi->LuaL_setfuncs(L, kRecomp, 0);
     sApi->Lua_setglobal(L, "Recomp");
 

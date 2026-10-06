@@ -5,6 +5,7 @@
 
 #include "ModBaseWidgets.h"
 
+#include "ModBaseLauncher.h"
 #include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
 #include "ModBaseSettings.h"
@@ -115,6 +116,10 @@ bool Resolve(const Token& t, std::string& out)
     {
         // a mod setting: {@id} its value text, {@id.label} its label
         std::string id = t.name.substr(1);
+        if (id.compare(0, 9, "launcher.") == 0)
+        {
+            return RecompLauncher_Token(id.substr(9), out);
+        }
         bool label = false;
         if (id.size() > 6 && id.compare(id.size() - 6, 6, ".label") == 0)
         {
@@ -431,6 +436,7 @@ void RecompButton::Activate()
         else if (mSetting == "@reset") settings.ResetAll();
         else if (mSetting == "@close") CloseMenu(this);
         else if (mSetting.compare(0, 6, "@page:") == 0) ShowPage(this, mSetting.substr(6));
+        else if (mSetting.compare(0, 10, "@launcher:") == 0) RecompLauncher_Command(mSetting.substr(10), this);
         else settings.Step(mSetting, mDirection);
         return;
     }
@@ -867,6 +873,11 @@ void RecompMenuController::SetCloseAction(const std::string& action)
     mCloseAction = action;
 }
 
+void RecompMenuController::SetCloseOnBack(bool closeOnBack)
+{
+    mCloseOnBack = closeOnBack;
+}
+
 void RecompMenuController::SetPanel(Node* panel)
 {
     mPanel = ResolveWeakPtr<Widget>(panel);
@@ -883,6 +894,24 @@ void RecompMenuController::SetPanelFit(glm::vec2 maxSize, float margin, int32_t 
 const std::vector<RecompMenuController*>& RecompMenuController::GetAll()
 {
     return Controllers();
+}
+
+RecompMenuController* RecompMenuController::FindFor(Node* node)
+{
+    return FindController(node);
+}
+
+RecompMenuController* RecompMenuController::FindSettingsMenu()
+{
+    RecompMenuController* first = nullptr;
+    for (RecompMenuController* c : Controllers())
+    {
+        Node* root = c->GetParent();
+        if (root != nullptr && root->FindChild("Pages", true) != nullptr) return c;
+        // (a launcher's own menu is not a settings menu)
+        if (first == nullptr && (root == nullptr || root->FindChild("Launcher", false) == nullptr)) first = c;
+    }
+    return first;
 }
 
 bool RecompMenuController::IsCapturingInput()
@@ -941,6 +970,8 @@ void RecompMenuController::Tick(float deltaTime)
     {
         // select a button once A is up, so the press that opened the UI doesn't press it
         mSelectPending = mCaptureInput;
+        static uint32_t sOpenOrder = 0;
+        mOpenOrder = ++sOpenOrder;
     }
     else if (!visible && mWasVisible)
     {
@@ -957,7 +988,15 @@ void RecompMenuController::Tick(float deltaTime)
     {
         return;
     }
-    if (INP_IsGamepadButtonJustDown(GAMEPAD_B, 0) ||
+    // another UI opened over this one (the mod settings over a launcher) has the gamepad
+    for (RecompMenuController* other : Controllers())
+    {
+        if (other != this && other->mCaptureInput && other->mOpenOrder > mOpenOrder && other->TargetVisible())
+        {
+            return;
+        }
+    }
+    if ((mCloseOnBack && INP_IsGamepadButtonJustDown(GAMEPAD_B, 0)) ||
         (!mBoundVariable.empty() && INP_IsGamepadButtonJustDown(GAMEPAD_START, 0)) ||
         (!mCloseAction.empty() && RecompActionJustPressed(mCloseAction)))
     {
@@ -1080,6 +1119,7 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Integer, "Toggle Button", this, &mToggleButton));
     outProps.push_back(Property(DatumType::String, "Toggle Action", this, &mToggleAction));
     outProps.push_back(Property(DatumType::String, "Close Action", this, &mCloseAction));
+    outProps.push_back(Property(DatumType::Bool, "Close On Back", this, &mCloseOnBack));
     outProps.push_back(Property(DatumType::Bool, "In HOME Menu", this, &mInHomeMenu));
     outProps.push_back(Property(DatumType::String, "Bound Variable", this, &mBoundVariable));
 }

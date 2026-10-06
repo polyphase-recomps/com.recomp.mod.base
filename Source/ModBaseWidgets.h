@@ -25,6 +25,8 @@
  *   {name?yes|no}   "yes" when the variable is non-zero, else "no"
  *   {@id}           a mod setting's value as shown in menus ("ON", "Fit", "3")
  *   {@id.label}     a mod setting's label
+ *   {@launcher.x}   the game's launcher: title, rom, romfile, message, status, ready
+ *                   (ModBaseLauncher.h)
  *   {{ / }}         literal braces
  * Unresolved tokens show as "--" (the game publishes its variables once it reaches its
  * main loop). With no game running the widgets keep what the editor shows.
@@ -150,6 +152,8 @@ public:
     // only closes it (B always closes).
     void SetToggleAction(const std::string& action);
     void SetCloseAction(const std::string& action);
+    // B closes the UI (default). Off for UIs that must stay, like a launcher.
+    void SetCloseOnBack(bool closeOnBack);
     // The widget shown/hidden. Empty: a sibling named "Panel", else the parent. Keep the
     // controller outside it: hidden widgets don't tick, so a controller inside the widget
     // it hides can't open it again.
@@ -160,6 +164,10 @@ public:
 
     static const std::vector<RecompMenuController*>& GetAll();
     static bool IsCapturingInput();
+    // The controller of the UI a node is in (a child of one of its ancestors).
+    static RecompMenuController* FindFor(Node* node);
+    // The generated mod settings menu: the controller whose UI has "Pages" (else the first).
+    static RecompMenuController* FindSettingsMenu();
 
 protected:
     Widget* Target();
@@ -181,10 +189,13 @@ protected:
     int32_t mToggleButton = -1;
     std::string mToggleAction;
     std::string mCloseAction;
+    bool mCloseOnBack = true;
     bool mLoggedSetup = false;
     bool mInHomeMenu = true;
     std::string mBoundVariable;
     bool mWasVisible = false;
     bool mSelectPending = false;
     bool mBoundOn = false;
+    // several open UIs (the mod settings over a launcher): the last opened drives the gamepad
+    uint32_t mOpenOrder = 0;
 };

@@ -17,6 +17,7 @@
 #include "AssetDir.h"
 #include "AssetManager.h"
 #include "Assets/Font.h"
+#include "Assets/Scene.h"
 #include "Assets/Texture.h"
 #include "Editor/EditorUtils.h"
 #include "Engine.h"
@@ -54,6 +55,7 @@ const char* kEditorWindow = "recomp.mods.editor";
 const char* kLiveWindow = "recomp.mods.live";
 const char* kDisplayWindow = "recomp.mods.display";
 const char* kStyleWindow = "recomp.mods.style";
+const char* kLauncherWindow = "recomp.mods.launcher";
 const char* kGenerateWindow = "recomp.mods.generate";
 const char* kGenerateModal = "Generate Mod Settings Scene";
 
@@ -1264,6 +1266,146 @@ void DrawMenuStyle(void*)
     }
 }
 
+// ---- Launcher ------------------------------------------------------------------------------
+char sLauncherScene[128] = "";
+bool sLauncherLive = true;
+std::string sLauncherMessage;
+
+bool InputLabel(const char* label, std::string& value)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", value.c_str());
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::InputText(label, buf, sizeof(buf)))
+    {
+        value = buf;
+        return true;
+    }
+    return false;
+}
+
+void DrawLauncher(void*)
+{
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty()) map = maps.front();
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            if (ImGui::Selectable(m->GetName().c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                map = m;
+                sLauncherScene[0] = 0;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (map == nullptr)
+    {
+        ImGui::TextColored(kWarn, "Create a Mod Map first (Tools > Recomp > Mods > Mod Map Editor).");
+        return;
+    }
+    if (sLauncherScene[0] == 0) snprintf(sLauncherScene, sizeof(sLauncherScene), "%s", ModLauncher_DefaultName(map).c_str());
+    ImGui::TextDisabled("The front-end scene of %s: the player sets the ROM up, opens the mods, presses Play.",
+                        map->mGame.c_str());
+
+    ModLauncherSettings& l = map->mLauncher;
+    bool changed = false;
+    ImGui::BeginChild("launcher", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.2f));
+    if (ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= InputLabel("Title", l.mTitle);
+        ImGui::TextDisabled("Empty: the Mod Map's title (%s).", map->mTitle.empty() ? "none" : map->mTitle.c_str());
+        changed |= InputLabel("Subtitle", l.mSubtitle);
+    }
+    if (ImGui::CollapsingHeader("Pictures", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= AssetPicker("Logo", l.mLogo, Texture::GetStaticType());
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Logo size", &l.mLogoSize.x, 1.0f, 16.0f, 2048.0f, "%.0f px");
+        changed |= AssetPicker("Background", l.mBackground, Texture::GetStaticType());
+        changed |= ImGui::ColorEdit4("Background tint", &l.mBackgroundColor.x, ImGuiColorEditFlags_AlphaBar);
+        ImGui::TextDisabled("The panel, buttons and fonts follow the Menu Style (Tools > Recomp > Mods > Menu Style).");
+    }
+    if (ImGui::CollapsingHeader("Panel and buttons", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Panel size", &l.mPanelSize.x, 1.0f, 200.0f, 4096.0f, "%.0f px");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::Combo("Position", &l.mPosition, "Centre\0Left\0Right\0");
+        changed |= InputLabel("Play", l.mPlayLabel);
+        changed |= InputLabel("Choose ROM", l.mBrowseLabel);
+        changed |= InputLabel("Forget ROM", l.mForgetLabel);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Show##forget", &l.mShowForget);
+        changed |= InputLabel("Mods", l.mModsLabel);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Show##mods", &l.mShowMods);
+        changed |= InputLabel("Quit", l.mQuitLabel);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Show##quit", &l.mShowQuit);
+    }
+    if (ImGui::CollapsingHeader("Starting the game", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= AssetPicker("Game Scene", l.mGameScene, Scene::GetStaticType());
+        ImGui::TextDisabled("Opened once the game starts: the scene with the game's player node.\n"
+                            "(none) = stay; the launcher then steps aside for the game in its own scene.");
+        changed |= ImGui::Checkbox("Start at once when the ROM is known", &l.mAutoStart);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Later launches go straight to the game; the launcher shows only while no ROM is set\n"
+                              "(or the ROM stopped working).");
+        }
+    }
+    ImGui::EndChild();
+
+    if (changed)
+    {
+        map->SetDirtyFlag();
+        if (sLauncherLive) ModLauncher_RestyleOpen(*map);
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(260.0f);
+    ImGui::InputText("Scene", sLauncherScene, sizeof(sLauncherScene));
+    ImGui::SameLine();
+    ImGui::Checkbox("Live preview", &sLauncherLive);
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Update the launchers in the open level as you edit (Generate / Update saves it).");
+    }
+    const bool exists = FetchAssetStub(sLauncherScene) != nullptr;
+    if (ImGui::Button(exists ? "Update Scene" : "Generate Scene", ImVec2(140, 0)))
+    {
+        SaveMap(map);
+        ModLauncher_Generate(map, sLauncherScene, sLauncherMessage);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Saves these settings with the Mod Map and makes / updates the launcher scene.\n"
+                          "Nodes you changed or added stay; the look is applied again.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save", ImVec2(90, 0)))
+    {
+        SaveMap(map);
+        sLauncherMessage = sStatus;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to defaults", ImVec2(150, 0)))
+    {
+        l = ModLauncherSettings();
+        map->SetDirtyFlag();
+        if (sLauncherLive) ModLauncher_RestyleOpen(*map);
+    }
+    if (!sLauncherMessage.empty())
+    {
+        ImGui::TextWrapped("%s", sLauncherMessage.c_str());
+    }
+}
+
 // ---- inspector, create asset ---------------------------------------------------------------
 void DrawModMapInspector(void* object, void*)
 {
@@ -1286,6 +1428,13 @@ void DrawModMapInspector(void* object, void*)
         sMapName = map->GetName();
         sStyleScene[0] = 0;
         if (sHooks && sHooks->OpenWindow) sHooks->OpenWindow(kStyleWindow);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Launcher"))
+    {
+        sMapName = map->GetName();
+        sLauncherScene[0] = 0;
+        if (sHooks && sHooks->OpenWindow) sHooks->OpenWindow(kLauncherWindow);
     }
 }
 
@@ -1315,6 +1464,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->RegisterWindow(hookId, "Live Variables", kLiveWindow, DrawLiveVariables, nullptr);
         hooks->RegisterWindow(hookId, "Display Settings", kDisplayWindow, DrawDisplaySettings, nullptr);
         hooks->RegisterWindow(hookId, "Menu Style", kStyleWindow, DrawMenuStyle, nullptr);
+        hooks->RegisterWindow(hookId, "Launcher", kLauncherWindow, DrawLauncher, nullptr);
 #if MODBASE_HAS_MODALS
         if (hooks->OpenModal == nullptr)
 #endif
@@ -1335,6 +1485,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Live Variables", OpenWindow, (void*)kLiveWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Display Settings", OpenWindow, (void*)kDisplayWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Menu Style", OpenWindow, (void*)kStyleWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Launcher", OpenWindow, (void*)kLauncherWindow, nullptr);
     }
     if (hooks->RegisterInspector != nullptr)
     {
