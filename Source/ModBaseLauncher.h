@@ -118,6 +118,8 @@ public:
     void SetGameScene(const AssetRef& scene);
     void SetModsScene(const AssetRef& scene);
     void SetAutoStart(bool autoStart);
+    // Play's and Quit's sounds, the music while the launcher is up, its volume.
+    void SetSounds(const AssetRef& start, const AssetRef& quit, const AssetRef& music, float musicVolume);
 
     // The launcher of a UI (in `from`'s tree), else the first one running.
     static RecompLauncher* Find(Node* from = nullptr);
@@ -136,6 +138,13 @@ protected:
 
     std::string mMessage;
     int32_t mStartCountdown = 0;
+    float mStartWait = 0.0f; // the Start sound still playing (the game scene opens after it)
+    float mQuitWait = -1.0f; // the Quit sound still playing (>= 0: quitting)
+    AssetRef mSoundStart;
+    AssetRef mSoundQuit;
+    AssetRef mMusic;
+    float mMusicVolume = 0.7f;
+    bool mMusicStarted = false;
     bool mSetUp = false;
     bool mFailed = false;
 };

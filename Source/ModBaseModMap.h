@@ -104,6 +104,12 @@ struct ModStyle
     AssetRef mHeaderFont; // titles (empty = mFont)
     AssetRef mBodyFont;   // labels, values, notes and other text (empty = mFont)
     AssetRef mButtonFont; // the buttons' and tabs' text (empty = mFont)
+    // sounds (SoundWave assets; none = silent)
+    AssetRef mSoundMove;   // the gamepad / keyboard selection moves to another button
+    AssetRef mSoundSelect; // a button is pressed
+    AssetRef mSoundCancel; // a Close button is pressed
+    AssetRef mSoundBack;   // the gamepad's B (or the close action) closes the menu
+    float mSoundVolume = 1.0f;
     glm::vec4 mTitleColor = {1.0f, 0.85f, 0.35f, 1.0f};
     float mTitleSize = 20.0f;
     glm::vec4 mLabelColor = {1.0f, 1.0f, 1.0f, 1.0f};     // labels of rows you can change
@@ -139,6 +145,10 @@ struct ModLauncherSettings
     bool mShowQuit = true;
     AssetRef mGameScene;                                  // opened once the game starts (none = stay)
     bool mAutoStart = false;                              // start at once when the game has its ROM
+    AssetRef mSoundStart;                                 // Play (the game starts once it has played)
+    AssetRef mSoundQuit;                                  // Quit (a packaged game closes once it has played)
+    AssetRef mMusic;                                      // loops while the launcher is up
+    float mMusicVolume = 0.7f;
 };
 
 class MODBASE_API ModMap : public Asset

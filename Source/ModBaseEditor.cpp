@@ -18,6 +18,7 @@
 #include "AssetManager.h"
 #include "Assets/Font.h"
 #include "Assets/Scene.h"
+#include "Assets/SoundWave.h"
 #include "Assets/Texture.h"
 #include "Editor/EditorUtils.h"
 #include "Engine.h"
@@ -1319,6 +1320,20 @@ void DrawMenuStyle(void*)
         size("Value size", s.mValueSize);
         size("Note size", s.mNoteSize);
     }
+    if (ImGui::CollapsingHeader("Sounds", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= AssetPicker("Move##snd", s.mSoundMove, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The gamepad / keyboard (or mouse) selection moves to another button.");
+        changed |= AssetPicker("Select##snd", s.mSoundSelect, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("A button is pressed (the launcher's Play and Quit have sounds of their own).");
+        changed |= AssetPicker("Cancel##snd", s.mSoundCancel, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("A Close button is pressed.");
+        changed |= AssetPicker("Gamepad back##snd", s.mSoundBack, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The gamepad's B (or the menu's close action) closes the menu.");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::SliderFloat("Volume##snd", &s.mSoundVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::TextDisabled("(none) = silent. The launcher's Start, Quit and music: Tools > Recomp > Mods > Launcher.");
+    }
     ImGui::EndChild();
 
     if (changed)
@@ -1468,6 +1483,25 @@ void DrawLauncher(void*)
         changed |= InputLabel("Quit", l.mQuitLabel);
         ImGui::SameLine();
         changed |= ImGui::Checkbox("Show##quit", &l.mShowQuit);
+    }
+    if (ImGui::CollapsingHeader("Sounds", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= AssetPicker("Start game##lsnd", l.mSoundStart, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Play: the game scene opens once it has played (2 s at most).\n"
+                              "None = the menu style's Select sound.");
+        }
+        changed |= AssetPicker("Quit##lsnd", l.mSoundQuit, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Quit: a packaged game closes once it has played (1.5 s at most).");
+        }
+        changed |= AssetPicker("Music##lsnd", l.mMusic, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Loops while the launcher is up; stops when the game starts.");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::SliderFloat("Music volume##lsnd", &l.mMusicVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::TextDisabled("Moving, selecting and going back use the Menu Style's sounds.");
     }
     if (ImGui::CollapsingHeader("Starting the game", ImGuiTreeNodeFlags_DefaultOpen))
     {

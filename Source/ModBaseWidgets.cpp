@@ -9,9 +9,11 @@
 #include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
 #include "ModBaseSettings.h"
+#include "ModBaseSound.h"
 
 #include "AssetManager.h"
 #include "Assets/Font.h"
+#include "Assets/SoundWave.h"
 #include "Assets/Texture.h"
 #include "Log.h"
 #include "Input/Input.h"
@@ -479,6 +481,12 @@ void RecompText::SetHideIfMissing(bool hide)
 void RecompButton::Activate()
 {
     Button::Activate();
+    if (RecompMenuController* controller = FindController(this))
+    {
+        if (mSetting == "@close") controller->PlaySound(RecompMenuController::Sound::Cancel);
+        else if (mSetting != "@launcher:play" && mSetting != "@launcher:quit")
+            controller->PlaySound(RecompMenuController::Sound::Select);
+    }
     if (!mSetting.empty())
     {
         ModSettings& settings = ModSettings::Get();
@@ -711,6 +719,10 @@ void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
     }
     const std::string& name = node->GetName();
     Node* parent = node->GetParent();
+    if (RecompMenuController* c = node->As<RecompMenuController>())
+    {
+        c->SetSounds(s.mSoundMove, s.mSoundSelect, s.mSoundCancel, s.mSoundBack, s.mSoundVolume);
+    }
     if (RecompButton* b = node->As<RecompButton>())
     {
         b->SetNormalTexture(s.mButtonTextures[ModStyle::Normal].Get<Texture>());
@@ -1083,8 +1095,10 @@ void RecompMenuController::Tick(float deltaTime)
     }
     mWasVisible = visible;
 
+    RecompSound::Follow(this);
     if (!visible || !mCaptureInput || target == nullptr)
     {
+        mLastSelected = ResolveWeakPtr<Button>(nullptr);
         return;
     }
     // another UI opened over this one (the mod settings over a launcher) has the gamepad
@@ -1099,6 +1113,7 @@ void RecompMenuController::Tick(float deltaTime)
         (!mBoundVariable.empty() && INP_IsGamepadButtonJustDown(GAMEPAD_START, 0)) ||
         (!mCloseAction.empty() && RecompActionJustPressed(mCloseAction)))
     {
+        PlaySound(Sound::Back);
         Close();
         LogDebug("Recomp menu '%s': closed", mTitle.c_str());
         return;
@@ -1121,7 +1136,34 @@ void RecompMenuController::Tick(float deltaTime)
     {
         KeepInView(selected, target);
     }
+    // the selection moved from one of this menu's buttons to another (not the first one picked)
+    Button* last = mLastSelected.Get();
+    if (selected != last)
+    {
+        if (last != nullptr && selected != nullptr && IsInside(last, target)) PlaySound(Sound::Move);
+        mLastSelected = ResolveWeakPtr<Button>(selected);
+    }
     GamepadScroll(deltaTime, target);
+}
+
+void RecompMenuController::SetSounds(const AssetRef& move, const AssetRef& select, const AssetRef& cancel,
+                                     const AssetRef& back, float volume)
+{
+    mSounds[(int)Sound::Move] = move;
+    mSounds[(int)Sound::Select] = select;
+    mSounds[(int)Sound::Cancel] = cancel;
+    mSounds[(int)Sound::Back] = back;
+    mSoundVolume = volume;
+}
+
+void RecompMenuController::PlaySound(Sound sound)
+{
+    if (sound < Sound::Count) PlaySoundWave(mSounds[(int)sound].Get<SoundWave>());
+}
+
+void RecompMenuController::PlaySoundWave(SoundWave* wave)
+{
+    RecompSound::Play(this, wave, mSoundVolume);
 }
 
 // Right stick up / down scrolls the shown page (rows without buttons, long text).
@@ -1233,4 +1275,16 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Close On Back", this, &mCloseOnBack));
     outProps.push_back(Property(DatumType::Bool, "In HOME Menu", this, &mInHomeMenu));
     outProps.push_back(Property(DatumType::String, "Bound Variable", this, &mBoundVariable));
+    {
+    SCOPED_CATEGORY("Recomp Menu Sounds");
+    outProps.push_back(Property(DatumType::Asset, "Move Sound", this, &mSounds[(int)Sound::Move], 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Select Sound", this, &mSounds[(int)Sound::Select], 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Cancel Sound", this, &mSounds[(int)Sound::Cancel], 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Back Sound", this, &mSounds[(int)Sound::Back], 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Float, "Sound Volume", this, &mSoundVolume));
+    }
 }

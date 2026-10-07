@@ -139,6 +139,9 @@ protected:
 class MODBASE_API RecompMenuController : public Widget
 {
 public:
+    enum class Sound : uint8_t { Move, Select, Cancel, Back, Count };
+
+public:
     DECLARE_NODE(RecompMenuController, Widget);
 
     virtual void Start() override;
@@ -170,6 +173,12 @@ public:
     // A full-stretch panel fills the screen minus `margin`, at most `maxSize` (0 = no cap),
     // placed by `align` (0 centre, 1 left, 2 right) when the screen is larger.
     void SetPanelFit(glm::vec2 maxSize, float margin, int32_t align);
+    // The menu's sounds (SoundWave assets; none = silent) and their volume.
+    void SetSounds(const AssetRef& move, const AssetRef& select, const AssetRef& cancel, const AssetRef& back,
+                   float volume);
+    void PlaySound(Sound sound);
+    // A launcher's sound at this menu's effects volume.
+    void PlaySoundWave(class SoundWave* wave);
 
     static const std::vector<RecompMenuController*>& GetAll();
     static bool IsCapturingInput();
@@ -195,6 +204,10 @@ protected:
     int32_t mPanelAlign = 0;
     glm::vec4 mFitMargins = {-1.0f, -1.0f, -1.0f, -1.0f};
     bool mFitted = false; // FitPanel changed the panel's margins
+    // sounds (Move, Select, Cancel, Back) and their volume
+    AssetRef mSounds[(int)Sound::Count];
+    float mSoundVolume = 1.0f;
+    WeakPtr<Button> mLastSelected; // for the Move sound
     float mScrollSpeed = 420.0f;
     int32_t mToggleButton = -1;
     std::string mToggleAction;

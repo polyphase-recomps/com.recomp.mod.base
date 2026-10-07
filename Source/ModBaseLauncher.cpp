@@ -5,6 +5,7 @@
  */
 
 #include "ModBaseLauncher.h"
+#include "ModBaseSound.h"
 
 #include "ModBaseModMap.h"
 #include "ModBaseSettings.h"
@@ -14,6 +15,7 @@
 #include "AssetManager.h"
 #include "Assets/Font.h"
 #include "Assets/Scene.h"
+#include "Assets/SoundWave.h"
 #include "Assets/Texture.h"
 #include "Engine.h"
 #include "EngineTypes.h"
@@ -111,7 +113,13 @@ bool RecompLauncher_Token(const std::string& name, std::string& out)
     RecompGameLauncher* game = node != nullptr ? node->Game() : Recomp_FindLauncher();
     if (game == nullptr)
     {
-        return false;
+        if (name == "romfile") out = "No ROM chosen";
+        else if (name == "status") out = "idle";
+        else if (name == "ready") out = "0";
+        else if (name == "message" && node != nullptr) out = node->GetMessage();
+        else if (name != "title" && name != "rom" && name != "message") return false;
+        if (out.empty()) out = " ";
+        return true;
     }
     if (name == "title") out = game->GameTitle();
     else if (name == "rom") out = game->GetRomLocation();
@@ -220,8 +228,16 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     StyleText(root, "Title", header, s.mTitleSize * 1.4f, s.mTitleColor, &title);
     StyleText(root, "Subtitle", body, s.mLabelSize, s.mInfoColor, &l.mSubtitle);
     if (Node* sub = root->FindChild("Subtitle", true)) sub->SetVisible(!l.mSubtitle.empty());
-    StyleText(root, "Rom", body, s.mValueSize, s.mValueColor, nullptr);
-    StyleText(root, "Message", body, s.mNoteSize, s.mInfoColor, nullptr);
+    // the ROM and message lines fill in as the launcher runs; until then (the editor) they show
+    // what a first start says, not their tokens
+    RecompGameLauncher* game = Recomp_FindLauncher(map.mGame.empty() ? nullptr : map.mGame.c_str());
+    const std::string romPreview = RecompFormat("{@launcher.romfile}");
+    const std::string messagePreview =
+        game == nullptr ? std::string(" ")
+        : !game->GetRomLocation().empty() || game->HasShippedData() ? std::string("Ready")
+                                                                    : "Choose your ROM of " + game->GameTitle() + " to play";
+    StyleText(root, "Rom", body, s.mValueSize, s.mValueColor, &romPreview);
+    StyleText(root, "Message", body, s.mNoteSize, s.mInfoColor, &messagePreview);
 
     if (Node* node = root->FindChild("Background", false))
     {
@@ -300,6 +316,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             launcher->SetGame(map.mGame);
             launcher->SetGameScene(l.mGameScene);
             launcher->SetAutoStart(l.mAutoStart);
+            launcher->SetSounds(l.mSoundStart, l.mSoundQuit, l.mMusic, l.mMusicVolume);
         }
         else if (RecompMenuController* controller = child->As<RecompMenuController>())
         {
@@ -444,16 +461,59 @@ void RecompLauncher::Tick(float deltaTime)
         }
         AddModsScene();
         DescribeRom();
+        if (!mMusicStarted)
+        {
+            mMusicStarted = true;
+            RecompSound::Play(this, mMusic.Get<SoundWave>(), mMusicVolume, true, "music");
+        }
         if (mAutoStart && game != nullptr && !game->IsStarted() && IsReady())
         {
             Play();
         }
     }
-    // Play shows "Starting..." for a frame first: the start may take a moment
-    if (mStartCountdown > 0 && --mStartCountdown == 0)
+    RecompSound::Follow(this);
+    // Play shows "Starting..." for a frame first (the start may take a moment), and lets its
+    // sound play out: the game scene replaces this one, sounds and all
+    if (mStartCountdown > 0)
     {
-        StartNow();
+        if (mStartCountdown > 1) --mStartCountdown;
+        else if ((mStartWait -= deltaTime) <= 0.0f)
+        {
+            mStartCountdown = 0;
+            StartNow();
+        }
     }
+#if !EDITOR
+    if (mQuitWait >= 0.0f && (mQuitWait -= deltaTime) < 0.0f)
+    {
+        GetEngineState()->mQuit = true;
+    }
+#endif
+}
+
+void RecompLauncher::SetSounds(const AssetRef& start, const AssetRef& quit, const AssetRef& music, float musicVolume)
+{
+    mSoundStart = start;
+    mSoundQuit = quit;
+    mMusic = music;
+    mMusicVolume = musicVolume;
+}
+
+namespace
+{
+// a launcher sound at its menu's effects volume (the menu's Select sound when it has none)
+float PlayLauncherSound(RecompLauncher* launcher, SoundWave* wave)
+{
+    RecompMenuController* menu = RecompMenuController::FindFor(launcher);
+    if (wave == nullptr)
+    {
+        if (menu != nullptr) menu->PlaySound(RecompMenuController::Sound::Select);
+        return 0.0f;
+    }
+    if (menu != nullptr) menu->PlaySoundWave(wave);
+    else RecompSound::Play(launcher, wave, 1.0f);
+    return RecompSound::Duration(wave);
+}
 }
 
 void RecompLauncher::Play()
@@ -473,6 +533,7 @@ void RecompLauncher::Play()
     {
         SetMessage("Starting " + game->GameTitle() + "...");
         mStartCountdown = 2;
+        mStartWait = std::min(PlayLauncherSound(this, mSoundStart.Get<SoundWave>()), 2.0f);
     }
 }
 
@@ -498,6 +559,7 @@ void RecompLauncher::StartNow()
         CallFunction("OnGameStartFailed", {this, message});
         return;
     }
+    RecompSound::Stop(this, "music");
     EmitSignal("GameStarted", {this});
     CallFunction("OnGameStarted", {this});
     Scene* next = mGameScene.Get<Scene>();
@@ -555,10 +617,13 @@ void RecompLauncher::OpenMods()
 
 void RecompLauncher::Quit()
 {
+    const float sound = std::min(PlayLauncherSound(this, mSoundQuit.Get<SoundWave>()), 1.5f);
 #if EDITOR
+    (void)sound;
     SetMessage("Quit (closes packaged games; ignored in the editor)");
 #else
-    GetEngineState()->mQuit = true;
+    // closes once its sound has played
+    if (mQuitWait < 0.0f) mQuitWait = sound;
 #endif
 }
 
@@ -591,4 +656,14 @@ void RecompLauncher::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Asset, "Mods Scene", this, &mModsScene, 1, nullptr, int32_t(Scene::GetStaticType())));
     outProps.push_back(Property(DatumType::Bool, "Auto Start", this, &mAutoStart));
     outProps.push_back(Property(DatumType::Bool, "Load Mods", this, &mLoadMods));
+    {
+    SCOPED_CATEGORY("Recomp Launcher Sounds");
+    outProps.push_back(Property(DatumType::Asset, "Start Sound", this, &mSoundStart, 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Quit Sound", this, &mSoundQuit, 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Music", this, &mMusic, 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Float, "Music Volume", this, &mMusicVolume));
+    }
 }

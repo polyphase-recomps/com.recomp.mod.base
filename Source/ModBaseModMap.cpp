@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 4;
+constexpr uint32_t kModMapVersion = 5;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -98,6 +98,33 @@ void WriteLook4(Stream& stream, const ModStyle& s, const ModLauncherSettings& l)
     stream.WriteAsset(s.mHeaderFont);
     stream.WriteAsset(s.mBodyFont);
     stream.WriteAsset(s.mButtonFont);
+}
+
+// version 5: sounds
+void ReadSounds5(Stream& stream, ModStyle& s, ModLauncherSettings& l)
+{
+    stream.ReadAsset(s.mSoundMove);
+    stream.ReadAsset(s.mSoundSelect);
+    stream.ReadAsset(s.mSoundCancel);
+    stream.ReadAsset(s.mSoundBack);
+    s.mSoundVolume = stream.ReadFloat();
+    stream.ReadAsset(l.mSoundStart);
+    stream.ReadAsset(l.mSoundQuit);
+    stream.ReadAsset(l.mMusic);
+    l.mMusicVolume = stream.ReadFloat();
+}
+
+void WriteSounds5(Stream& stream, const ModStyle& s, const ModLauncherSettings& l)
+{
+    stream.WriteAsset(s.mSoundMove);
+    stream.WriteAsset(s.mSoundSelect);
+    stream.WriteAsset(s.mSoundCancel);
+    stream.WriteAsset(s.mSoundBack);
+    stream.WriteFloat(s.mSoundVolume);
+    stream.WriteAsset(l.mSoundStart);
+    stream.WriteAsset(l.mSoundQuit);
+    stream.WriteAsset(l.mMusic);
+    stream.WriteFloat(l.mMusicVolume);
 }
 
 void ReadLauncher(Stream& stream, ModLauncherSettings& l)
@@ -227,6 +254,10 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadLook4(stream, mStyle, mLauncher);
     }
+    if (version >= 5)
+    {
+        ReadSounds5(stream, mStyle, mLauncher);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -278,6 +309,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     WriteStyle(stream, mStyle);
     WriteLauncher(stream, mLauncher);
     WriteLook4(stream, mStyle, mLauncher);
+    WriteSounds5(stream, mStyle, mLauncher);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)
