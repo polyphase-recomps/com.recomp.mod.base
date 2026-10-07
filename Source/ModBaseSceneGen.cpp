@@ -641,10 +641,22 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
         outMessage = "Panel exists but is not a Quad: left as it is.";
         return false;
     }
-    Widget* layout = Array(b, panel, "Layout", false, kLauncherGap, 16.0f, Filled(), true);
+    // the content scrolls when the window is too short for it (ModLauncher_ApplyLook sizes it)
+    ScrollContainer* scroll = Scroll(b, panel, "Scroll", false, Filled());
+    if (scroll == nullptr)
+    {
+        outMessage = "Panel/Scroll exists but is not a ScrollContainer: left as it is.";
+        return false;
+    }
+    if (Node* old = panel->FindChild("Layout", false))
+    {
+        // a launcher made before it scrolled: its content moves into the scroll view
+        old->Attach(scroll);
+    }
+    Widget* layout = Array(b, scroll, "Layout", false, kLauncherGap, 16.0f, At(0.0f, 0.0f, 0.0f, 400.0f), true);
     if (layout == nullptr)
     {
-        outMessage = "Panel/Layout exists but is not an ArrayWidget (or the engine has none): left as it is.";
+        outMessage = "Panel/Scroll/Layout exists but is not an ArrayWidget (or the engine has none): left as it is.";
         return false;
     }
     b.Ensure<Quad>(layout, "Logo", [&](Quad* q) { Place(q, 0, 0, l.mLogoSize.x, l.mLogoSize.y); });

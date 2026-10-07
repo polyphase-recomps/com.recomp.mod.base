@@ -19,6 +19,7 @@
 #include "EngineTypes.h"
 #include "Log.h"
 #include "Nodes/Widgets/Quad.h"
+#include "Nodes/Widgets/ScrollContainer.h"
 #include "Nodes/Widgets/Text.h"
 #include "System/System.h"
 #include "World.h"
@@ -163,6 +164,35 @@ void StyleText(Node* root, const char* name, Font* font, float size, glm::vec4 c
     if (text != nullptr) t->SetText(*text);
 }
 
+float FloatProperty(Node* node, const char* name, float fallback)
+{
+    std::vector<Property> props;
+    node->GatherProperties(props);
+    for (Property& p : props)
+    {
+        if (p.mName == name && p.GetType() == DatumType::Float) return p.GetFloat();
+    }
+    return fallback;
+}
+
+// An ArrayWidget column as tall as its shown children (it doesn't size itself); the height.
+float FitColumn(Widget* column)
+{
+    const float spacing = FloatProperty(column, "Spacing", 0.0f);
+    float total = FloatProperty(column, "Padding Top", 0.0f) + FloatProperty(column, "Padding Bottom", 0.0f);
+    int shown = 0;
+    for (uint32_t i = 0; i < column->GetNumChildren(); ++i)
+    {
+        Widget* w = column->GetChild((int32_t)i)->As<Widget>();
+        if (w == nullptr || !w->IsVisible()) continue;
+        total += w->GetHeight();
+        ++shown;
+    }
+    if (shown > 1) total += spacing * float(shown - 1);
+    column->SetHeight(total);
+    return total;
+}
+
 void LabelButton(Node* root, const char* name, const std::string& label, bool shown)
 {
     Node* node = root->FindChild(name, true);
@@ -228,6 +258,24 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     {
         shown[i]->SetNavUp(i > 0 ? shown[i - 1] : nullptr);
         shown[i]->SetNavDown(i + 1 < shown.size() ? shown[i + 1] : nullptr);
+    }
+
+    // the content as tall as what is shown: the scroll view around it (Panel/Scroll) scrolls
+    // when the window is shorter, so the buttons can always be reached
+    if (Node* node = root->FindChild("Buttons", true))
+    {
+        if (Widget* w = node->As<Widget>()) FitColumn(w);
+    }
+    if (Node* node = root->FindChild("Layout", true))
+    {
+        Widget* layout = node->As<Widget>();
+        if (layout != nullptr && node->GetParent() != nullptr && node->GetParent()->As<ScrollContainer>() != nullptr)
+        {
+            // top-left in the scroll view; its width follows the view (FitWidth)
+            layout->SetAnchorMode(AnchorMode::TopLeft);
+            layout->SetPosition(0.0f, 0.0f);
+            FitColumn(layout);
+        }
     }
 
     for (uint32_t i = 0; i < root->GetNumChildren(); ++i)
