@@ -129,6 +129,9 @@ struct ModLauncherSettings
     std::string mSubtitle;                                // a line under the title
     AssetRef mLogo;                                       // a picture above the title (none = no logo)
     glm::vec2 mLogoSize = {320.0f, 120.0f};
+    glm::vec2 mLogoUvScale = {1.0f, 1.0f};               // the part of the logo shown (Crop Texture)
+    glm::vec2 mLogoUvOffset = {0.0f, 0.0f};
+    uint8_t mLogoFit = 1;                                 // ObjectFit: 0 fill, 1 contain, 2 cover, 3 none
     AssetRef mBackground;                                 // full-screen picture behind the panel
     glm::vec4 mBackgroundColor = {0.0f, 0.0f, 0.0f, 1.0f}; // its tint (or the fill without one)
     bool mTintBackground = true;                          // off: the picture as it is

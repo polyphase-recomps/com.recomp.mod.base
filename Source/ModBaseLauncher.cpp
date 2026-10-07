@@ -267,6 +267,9 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             Texture* logo = l.mLogo.Get<Texture>();
             q->SetTexture(logo);
             q->SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+            q->SetUvScale(l.mLogoUvScale);
+            q->SetUvOffset(l.mLogoUvOffset);
+            q->SetObjectFit(l.mLogoFit < uint8_t(ObjectFit::Count) ? ObjectFit(l.mLogoFit) : ObjectFit::Contain);
             q->SetDimensions(l.mLogoSize.x, l.mLogoSize.y);
             q->SetVisible(logo != nullptr);
         }

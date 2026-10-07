@@ -1149,9 +1149,20 @@ void UpdateStyledScene(ModMap* map)
 
 // The engine's Crop Texture (its texture crop editor, which addons can't open themselves): a
 // Quad of our own, never in a level, carries the texture and the UVs through it.
-bool CropTextureButton(Texture* texture, glm::vec2& uvScale, glm::vec2& uvOffset)
+bool CropTextureButton(int slot, Texture* texture, glm::vec2& uvScale, glm::vec2& uvOffset)
 {
-    static SharedPtr<Quad> sCropQuad;
+    constexpr int kSlots = 4;
+    static SharedPtr<Quad> sCropQuads[kSlots];
+    // what the quad was last given or gave back: a change typed into the fields goes to it, a
+    // crop applied in the editor (its callback sets the quad, maybe while another button draws
+    // the editor's window) comes back from it
+    static glm::vec2 sSynced[kSlots][2];
+    slot = slot < 0 ? 0 : (slot >= kSlots ? kSlots - 1 : slot);
+    ImGui::PushID(slot);
+    struct PopId
+    {
+        ~PopId() { ImGui::PopID(); }
+    } popId;
     if (texture == nullptr)
     {
         ImGui::BeginDisabled();
@@ -1163,26 +1174,47 @@ bool CropTextureButton(Texture* texture, glm::vec2& uvScale, glm::vec2& uvOffset
         }
         return false;
     }
-    if (sCropQuad.Get() == nullptr)
+    if (sCropQuads[slot].Get() == nullptr)
     {
-        sCropQuad = Node::Construct<Quad>();
+        sCropQuads[slot] = Node::Construct<Quad>();
+        sSynced[slot][0] = sCropQuads[slot]->GetUvScale();
+        sSynced[slot][1] = sCropQuads[slot]->GetUvOffset();
     }
-    Quad* quad = sCropQuad.Get();
+    Quad* quad = sCropQuads[slot].Get();
     if (quad->GetTexture() != texture) quad->SetTexture(texture);
-    quad->SetUvScale(uvScale);
-    quad->SetUvOffset(uvOffset);
+    if (uvScale != sSynced[slot][0] || uvOffset != sSynced[slot][1])
+    {
+        quad->SetUvScale(uvScale);
+        quad->SetUvOffset(uvOffset);
+        sSynced[slot][0] = uvScale;
+        sSynced[slot][1] = uvOffset;
+    }
     static bool sUnused = false;
     Property crop(DatumType::Bool, "Crop Texture", quad, &sUnused);
-    quad->DrawCustomProperty(crop); // the button, and the crop editor's popup while it is open
+    quad->DrawCustomProperty(crop); // the button, and the crop editor's window while it is open
     const glm::vec2 scale = quad->GetUvScale();
     const glm::vec2 offset = quad->GetUvOffset();
-    if (scale == uvScale && offset == uvOffset)
+    if (scale == sSynced[slot][0] && offset == sSynced[slot][1])
     {
         return false;
     }
-    uvScale = scale;
-    uvOffset = offset;
+    uvScale = sSynced[slot][0] = scale;
+    uvOffset = sSynced[slot][1] = offset;
     return true;
+}
+
+bool FitCombo(const char* label, uint8_t& fit)
+{
+    int value = fit;
+    ImGui::SetNextItemWidth(160.0f);
+    const bool changed = ImGui::Combo(label, &value, "Fill\0Contain\0Cover\0None\0");
+    if (changed) fit = (uint8_t)value;
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("How the picture fits its box: Contain = all of it, its shape kept;\n"
+                          "Cover = fills the box, cropped; Fill = stretched; None = its own size.");
+    }
+    return changed;
 }
 
 void DrawMenuStyle(void*)
@@ -1267,24 +1299,13 @@ void DrawMenuStyle(void*)
         }
         ImGui::Spacing();
         ImGui::TextUnformatted("Texture");
-        changed |= CropTextureButton(s.mButtonTextures[ModStyle::Normal].Get<Texture>(), s.mButtonUvScale,
+        changed |= CropTextureButton(0, s.mButtonTextures[ModStyle::Normal].Get<Texture>(), s.mButtonUvScale,
                                      s.mButtonUvOffset);
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::DragFloat2("UV Scale", &s.mButtonUvScale.x, 0.005f, 0.0f, 16.0f, "%.3f");
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::DragFloat2("UV Offset", &s.mButtonUvOffset.x, 0.005f, -16.0f, 16.0f, "%.3f");
-        int fit = s.mButtonFit;
-        ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::Combo("Object Fit", &fit, "Fill\0Contain\0Cover\0None\0"))
-        {
-            s.mButtonFit = (uint8_t)fit;
-            changed = true;
-        }
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("How a button's texture fits it: Contain = all of it, its shape kept;\n"
-                              "Cover = fills the button, cropped; Fill = stretched; None = its own size.");
-        }
+        changed |= FitCombo("Object Fit", s.mButtonFit);
         ImGui::Spacing();
         color("Text color##button", s.mButtonTextColor);
         size("Button text size", s.mButtonTextSize);
@@ -1319,6 +1340,25 @@ void DrawMenuStyle(void*)
         color("Value color", s.mValueColor);
         size("Value size", s.mValueSize);
         size("Note size", s.mNoteSize);
+    }
+    if (ImGui::CollapsingHeader("Launcher", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ModLauncherSettings& l = map->mLauncher;
+        changed |= AssetPicker("Logo##ms", l.mLogo, Texture::GetStaticType());
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Logo size##ms", &l.mLogoSize.x, 1.0f, 16.0f, 2048.0f, "%.0f px");
+        changed |= CropTextureButton(1, l.mLogo.Get<Texture>(), l.mLogoUvScale, l.mLogoUvOffset);
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Logo UV Scale##ms", &l.mLogoUvScale.x, 0.005f, 0.0f, 16.0f, "%.3f");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Logo UV Offset##ms", &l.mLogoUvOffset.x, 0.005f, -16.0f, 16.0f, "%.3f");
+        changed |= FitCombo("Logo Object Fit##ms", l.mLogoFit);
+        ImGui::Spacing();
+        changed |= AssetPicker("Background music##ms", l.mMusic, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Loops while the launcher is up; stops when the game starts.");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::SliderFloat("Music volume##ms", &l.mMusicVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::TextDisabled("The launcher's text, pictures and buttons: Tools > Recomp > Mods > Launcher.");
     }
     if (ImGui::CollapsingHeader("Sounds", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -1443,9 +1483,7 @@ void DrawLauncher(void*)
     }
     if (ImGui::CollapsingHeader("Pictures", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        changed |= AssetPicker("Logo", l.mLogo, Texture::GetStaticType());
-        ImGui::SetNextItemWidth(160.0f);
-        changed |= ImGui::DragFloat2("Logo size", &l.mLogoSize.x, 1.0f, 16.0f, 2048.0f, "%.0f px");
+        ImGui::TextDisabled("Logo (picture, size, crop, fit) and music: Menu Style > Launcher.");
         changed |= AssetPicker("Background", l.mBackground, Texture::GetStaticType());
         changed |= ImGui::Checkbox("Tint the picture", &l.mTintBackground);
         if (ImGui::IsItemHovered())

@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 5;
+constexpr uint32_t kModMapVersion = 6;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -125,6 +125,21 @@ void WriteSounds5(Stream& stream, const ModStyle& s, const ModLauncherSettings& 
     stream.WriteAsset(l.mSoundQuit);
     stream.WriteAsset(l.mMusic);
     stream.WriteFloat(l.mMusicVolume);
+}
+
+// version 6: the logo's crop and fit
+void ReadLogo6(Stream& stream, ModLauncherSettings& l)
+{
+    l.mLogoUvScale = stream.ReadVec2();
+    l.mLogoUvOffset = stream.ReadVec2();
+    l.mLogoFit = stream.ReadUint8();
+}
+
+void WriteLogo6(Stream& stream, const ModLauncherSettings& l)
+{
+    stream.WriteVec2(l.mLogoUvScale);
+    stream.WriteVec2(l.mLogoUvOffset);
+    stream.WriteUint8(l.mLogoFit);
 }
 
 void ReadLauncher(Stream& stream, ModLauncherSettings& l)
@@ -258,6 +273,10 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadSounds5(stream, mStyle, mLauncher);
     }
+    if (version >= 6)
+    {
+        ReadLogo6(stream, mLauncher);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -310,6 +329,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     WriteLauncher(stream, mLauncher);
     WriteLook4(stream, mStyle, mLauncher);
     WriteSounds5(stream, mStyle, mLauncher);
+    WriteLogo6(stream, mLauncher);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)
