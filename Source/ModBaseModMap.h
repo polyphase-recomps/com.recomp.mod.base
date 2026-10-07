@@ -82,6 +82,7 @@ struct ModStyle
     // panel (background)
     glm::vec4 mPanelColor = {0.04f, 0.05f, 0.08f, 0.88f}; // tint (with a texture) or fill
     AssetRef mPanelTexture;
+    bool mTintPanel = true; // off: the panel's texture as it is
     // buttons: per-state texture (empty = the Normal one, or none) and tint
     AssetRef mButtonTextures[StateCount];
     glm::vec4 mButtonColors[StateCount] = {

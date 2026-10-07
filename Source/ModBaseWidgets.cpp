@@ -752,8 +752,9 @@ void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
     {
         if (Quad* q = node->As<Quad>())
         {
-            q->SetColor(s.mPanelColor);
-            q->SetTexture(s.mPanelTexture.Get<Texture>());
+            Texture* texture = s.mPanelTexture.Get<Texture>();
+            q->SetColor(texture != nullptr && !s.mTintPanel ? glm::vec4(1.0f) : s.mPanelColor);
+            q->SetTexture(texture);
         }
     }
     for (uint32_t i = 0; i < node->GetNumChildren(); ++i)

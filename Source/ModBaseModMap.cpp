@@ -79,6 +79,7 @@ void ReadLook4(Stream& stream, ModStyle& s, ModLauncherSettings& l)
     s.mButtonStateTint = (flags & 2) != 0;
     l.mTintBackground = (flags & 4) != 0;
     l.mPanelFullScreen = (flags & 8) != 0;
+    s.mTintPanel = (flags & 16) == 0;
     s.mButtonUvScale = stream.ReadVec2();
     s.mButtonUvOffset = stream.ReadVec2();
     s.mButtonFit = stream.ReadUint8();
@@ -90,7 +91,7 @@ void ReadLook4(Stream& stream, ModStyle& s, ModLauncherSettings& l)
 void WriteLook4(Stream& stream, const ModStyle& s, const ModLauncherSettings& l)
 {
     stream.WriteUint8((uint8_t)((s.mShowHighlight ? 1 : 0) | (s.mButtonStateTint ? 2 : 0) | (l.mTintBackground ? 4 : 0) |
-                                (l.mPanelFullScreen ? 8 : 0)));
+                                (l.mPanelFullScreen ? 8 : 0) | (s.mTintPanel ? 0 : 16)));
     stream.WriteVec2(s.mButtonUvScale);
     stream.WriteVec2(s.mButtonUvOffset);
     stream.WriteUint8(s.mButtonFit);

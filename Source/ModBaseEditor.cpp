@@ -1223,9 +1223,13 @@ void DrawMenuStyle(void*)
     ImGui::BeginChild("style", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.2f));
     if (ImGui::CollapsingHeader("Background", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        color("Tint##panel", s.mPanelColor);
+        color(s.mPanelTexture.Get() != nullptr && !s.mTintPanel ? "Color (no texture)##panel" : "Tint##panel",
+              s.mPanelColor);
         changed |= AssetPicker("Texture##panel", s.mPanelTexture, Texture::GetStaticType());
-        ImGui::TextDisabled("With a texture the tint multiplies it (white = the texture as it is).");
+        changed |= ImGui::Checkbox("Tint the texture##panel", &s.mTintPanel);
+        ImGui::TextDisabled("The panel behind the menu's content. With a texture the tint multiplies it;\n"
+                            "untinted it shows as it is. The launcher's full-screen picture is set in\n"
+                            "Tools > Recomp > Mods > Launcher (Pictures).");
     }
     if (ImGui::CollapsingHeader("Buttons", ImGuiTreeNodeFlags_DefaultOpen))
     {
