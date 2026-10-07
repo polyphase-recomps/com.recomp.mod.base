@@ -306,14 +306,14 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     {
         Widget* footer = footerNode->As<Widget>();
         const float margin = 12.0f;
-        const float textSize = l.mFooterTextSize > 0.0f ? l.mFooterTextSize : 10.0f;
-        const float lineH = textSize + 6.0f;
+        const float textSize = l.mFooterTextSize > 0.0f ? l.mFooterTextSize : 5.0f;
+        const float lineH = textSize + 3.0f;
         Texture* logo = l.mFooterLogo.Get<Texture>();
         const bool hasText = !l.mFooterText.empty();
         const bool hasLogo = logo != nullptr;
         const bool hasVersion = !l.mVersionFormat.empty();
         const bool shown = l.mShowFooter && (hasText || hasLogo || hasVersion);
-        const float rowH = shown ? std::max(lineH, hasLogo ? l.mFooterLogoSize.y : 0.0f) + 2.0f * 6.0f : 0.0f;
+        const float rowH = shown ? std::max(lineH, hasLogo ? l.mFooterLogoSize.y : 0.0f) + 2.0f * 2.0f : 0.0f;
         if (footer != nullptr)
         {
             footer->SetVisible(shown);
