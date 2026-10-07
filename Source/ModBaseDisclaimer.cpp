@@ -37,6 +37,7 @@ DEFINE_NODE(RecompDisclaimer, Widget);
 namespace
 {
 constexpr float kLayoutPadding = 16.0f; // the content column's padding (ModDisclaimer_Generate)
+constexpr float kLayoutSpacing = 24.0f; // between its title, counter, text and buttons
 constexpr float kButtonH = 34.0f;
 
 std::vector<RecompDisclaimer*>& Nodes()
@@ -539,6 +540,7 @@ void ModDisclaimer_ApplyLook(Node* root, const ModMap& map)
             layout->SetAnchorMode(AnchorMode::TopLeft);
             layout->SetPosition(0.0f, 0.0f);
             SetFloatProperty(layout, "Padding Top", kLayoutPadding);
+            SetFloatProperty(layout, "Spacing", kLayoutSpacing);
             FitColumn(layout);
         }
     }

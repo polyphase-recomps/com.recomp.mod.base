@@ -881,7 +881,7 @@ bool ModDisclaimer_Generate(ModMap* map, const std::string& sceneNameIn, std::st
     });
     Widget* body = Array(b, panel, "Body", false, 0.0f, 0.0f, Filled());
     ScrollContainer* scroll = Scroll(b, body, "Scroll", false, [](Widget* w) { FillRest(w); });
-    Widget* layout = Array(b, scroll, "Layout", false, kLauncherGap, 16.0f, At(0.0f, 0.0f, 0.0f, 400.0f), true);
+    Widget* layout = Array(b, scroll, "Layout", false, 24.0f, 16.0f, At(0.0f, 0.0f, 0.0f, 400.0f), true);
     if (body == nullptr || scroll == nullptr || layout == nullptr)
     {
         outMessage = "Panel/Body/Scroll/Layout exists with other types (or the engine has no ArrayWidget): left as it is.";
