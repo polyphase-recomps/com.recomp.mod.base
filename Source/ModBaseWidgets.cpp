@@ -1146,9 +1146,20 @@ void RecompMenuController::GamepadScroll(float deltaTime, Widget* target)
 void RecompMenuController::FitPanel()
 {
     Widget* panel = mPanel.Get();
-    if (panel == nullptr || mMaxPanelSize.x <= 0.0f || mMaxPanelSize.y <= 0.0f ||
-        panel->GetAnchorMode() != AnchorMode::FullStretch)
+    if (panel == nullptr || panel->GetAnchorMode() != AnchorMode::FullStretch)
     {
+        return;
+    }
+    if (mMaxPanelSize.x <= 0.0f || mMaxPanelSize.y <= 0.0f)
+    {
+        // no fitting (a full-screen panel): one fitted before (an earlier setting, a live
+        // preview) fills the screen again
+        if (mFitted)
+        {
+            panel->SetRatios(0.0f, 0.0f, 1.0f, 1.0f);
+            mFitted = false;
+            mFitMargins = {-1.0f, -1.0f, -1.0f, -1.0f};
+        }
         return;
     }
     Widget* parent = panel->GetParentWidget();
@@ -1175,6 +1186,7 @@ void RecompMenuController::FitPanel()
     {
         mFitMargins = margins;
         panel->SetMargins(margins.x, margins.y, margins.z, margins.w);
+        mFitted = true;
     }
 }
 

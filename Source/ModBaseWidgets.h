@@ -194,6 +194,7 @@ protected:
     float mPanelMargin = 16.0f;
     int32_t mPanelAlign = 0;
     glm::vec4 mFitMargins = {-1.0f, -1.0f, -1.0f, -1.0f};
+    bool mFitted = false; // FitPanel changed the panel's margins
     float mScrollSpeed = 420.0f;
     int32_t mToggleButton = -1;
     std::string mToggleAction;
