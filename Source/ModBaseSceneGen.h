@@ -78,4 +78,11 @@ MODBASE_API std::string ModLauncher_DefaultName(const ModMap* map);
 MODBASE_API bool ModLauncher_ApplyLookToScene(ModMap* map, const std::string& sceneName, std::string& outMessage);
 // The launcher UIs open in the editor (live preview); returns how many.
 MODBASE_API int ModLauncher_RestyleOpen(const ModMap& map);
+
+// The disclaimer scene (SC_<Title>Disclaimer): the map's disclaimer pages to accept before the
+// game's first scene (ModBaseDisclaimer.h). Generate makes or updates it (nodes changed or added
+// are kept, the look applied again); RestyleOpen updates the ones open in the editor.
+MODBASE_API bool ModDisclaimer_Generate(ModMap* map, const std::string& sceneName, std::string& outMessage);
+MODBASE_API std::string ModDisclaimer_DefaultName(const ModMap* map);
+MODBASE_API int ModDisclaimer_RestyleOpen(const ModMap& map);
 #endif

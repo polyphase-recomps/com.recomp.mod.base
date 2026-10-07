@@ -38,6 +38,7 @@ static int OnLoad(PolyphaseEngineAPI* api)
     FORCE_LINK_CALL(RecompBar);
     FORCE_LINK_CALL(RecompMenuController);
     FORCE_LINK_CALL(RecompLauncher);
+    FORCE_LINK_CALL(RecompDisclaimer);
     if (api && api->LogDebug)
     {
         api->LogDebug("com.recomp.mod.base loaded");

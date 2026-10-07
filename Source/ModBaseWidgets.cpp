@@ -5,6 +5,7 @@
 
 #include "ModBaseWidgets.h"
 
+#include "ModBaseDisclaimer.h"
 #include "ModBaseLauncher.h"
 #include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
@@ -483,7 +484,8 @@ void RecompButton::Activate()
     Button::Activate();
     if (RecompMenuController* controller = FindController(this))
     {
-        if (mSetting == "@close") controller->PlaySound(RecompMenuController::Sound::Cancel);
+        if (mSetting == "@close" || mSetting == "@disclaimer:decline")
+            controller->PlaySound(RecompMenuController::Sound::Cancel);
         else if (mSetting != "@launcher:play" && mSetting != "@launcher:quit" && mSetting != "@launcher:forget")
             controller->PlaySound(RecompMenuController::Sound::Select);
     }
@@ -495,6 +497,7 @@ void RecompButton::Activate()
         else if (mSetting == "@close") CloseMenu(this);
         else if (mSetting.compare(0, 6, "@page:") == 0) ShowPage(this, mSetting.substr(6));
         else if (mSetting.compare(0, 10, "@launcher:") == 0) RecompLauncher_Command(mSetting.substr(10), this);
+        else if (mSetting.compare(0, 12, "@disclaimer:") == 0) RecompDisclaimer_Command(mSetting.substr(12), this);
         else settings.Step(mSetting, mDirection);
         return;
     }

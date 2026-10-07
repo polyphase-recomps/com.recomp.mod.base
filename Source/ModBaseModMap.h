@@ -166,6 +166,40 @@ struct ModLauncherSettings
     float mMusicVolume = 0.7f;
 };
 
+// The disclaimer scene (Tools > Recomp > Mods > Disclaimer): pages the player accepts once, before
+// the game's first scene; later runs show each for a moment and go on. Buttons, panel, fonts and
+// sounds follow the menu style; the background is its own.
+struct ModDisclaimerPage
+{
+    std::string mTitle;
+    std::string mText;
+};
+
+struct ModDisclaimerSettings
+{
+    static constexpr int kMaxPages = 4;
+    std::vector<ModDisclaimerPage> mPages = {
+        {"Disclaimer",
+         "This is an unofficial, fan-made project, made for research and entertainment purposes only. "
+         "It is not associated with, endorsed by or sponsored by the companies that created the original "
+         "game, or by the owners of its trademarks. All trademarks and copyrights belong to their "
+         "respective owners."},
+        {"Your copy of the game",
+         "No game data is included. By continuing, you confirm that you own the original game and that "
+         "the ROM / disc image you use is your own legally obtained copy of it. Do not download or "
+         "share copyrighted game files."}};
+    std::string mAcceptLabel = "I Agree";
+    std::string mDeclineLabel = "Quit";
+    AssetRef mBackground;                                  // full-screen picture behind the panel
+    glm::vec4 mBackgroundColor = {0.0f, 0.0f, 0.0f, 1.0f}; // its tint (or the fill without one)
+    bool mTintBackground = true;
+    bool mShowBackground = true;
+    glm::vec2 mPanelSize = {560.0f, 420.0f};
+    bool mPanelFullScreen = false;
+    AssetRef mNextScene;                                   // opened after the last page
+    float mHoldSeconds = 2.0f;                             // each page, once accepted
+};
+
 class MODBASE_API ModMap : public Asset
 {
 public:
@@ -188,6 +222,7 @@ public:
     std::vector<ModEntry> mEntries;
     ModStyle mStyle;
     ModLauncherSettings mLauncher;
+    ModDisclaimerSettings mDisclaimer;
 
     const ModEntry* Find(const std::string& id) const;
     ModEntry* Find(const std::string& id);

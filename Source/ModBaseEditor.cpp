@@ -59,6 +59,7 @@ const char* kLiveWindow = "recomp.mods.live";
 const char* kDisplayWindow = "recomp.mods.display";
 const char* kStyleWindow = "recomp.mods.style";
 const char* kLauncherWindow = "recomp.mods.launcher";
+const char* kDisclaimerWindow = "recomp.mods.disclaimer";
 const char* kGenerateWindow = "recomp.mods.generate";
 const char* kGenerateModal = "Generate Mod Settings Scene";
 
@@ -1391,6 +1392,7 @@ void DrawMenuStyle(void*)
         {
             ModScene_RestyleOpen(s);
             ModLauncher_RestyleOpen(*map);
+            ModDisclaimer_RestyleOpen(*map);
         }
     }
     ImGui::Separator();
@@ -1647,6 +1649,157 @@ void DrawLauncher(void*)
     }
 }
 
+// ---- Disclaimer ----------------------------------------------------------------------------
+char sDisclaimerScene[128] = "";
+bool sDisclaimerLive = true;
+std::string sDisclaimerMessage;
+
+bool InputMultiline(const char* label, std::string& value)
+{
+    static char buf[4096];
+    snprintf(buf, sizeof(buf), "%s", value.c_str());
+    if (ImGui::InputTextMultiline(label, buf, sizeof(buf), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 5.0f)))
+    {
+        value = buf;
+        return true;
+    }
+    return false;
+}
+
+void DrawDisclaimer(void*)
+{
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty()) map = maps.front();
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            if (ImGui::Selectable(m->GetName().c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                map = m;
+                sDisclaimerScene[0] = 0;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (map == nullptr)
+    {
+        ImGui::TextColored(kWarn, "Create a Mod Map first (Tools > Recomp > Mods > Mod Map Editor).");
+        return;
+    }
+    if (sDisclaimerScene[0] == 0)
+    {
+        snprintf(sDisclaimerScene, sizeof(sDisclaimerScene), "%s", ModDisclaimer_DefaultName(map).c_str());
+    }
+    ImGui::TextDisabled("Pages the player accepts once before %s starts; later runs show each for a moment.",
+                        map->mTitle.empty() ? map->mGame.c_str() : map->mTitle.c_str());
+
+    ModDisclaimerSettings& d = map->mDisclaimer;
+    bool changed = false;
+    ImGui::BeginChild("disclaimer", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.2f));
+    if (ImGui::CollapsingHeader("Pages", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        int remove = -1;
+        for (int i = 0; i < (int)d.mPages.size(); ++i)
+        {
+            ImGui::PushID(i);
+            ImGui::Text("Page %d", i + 1);
+            if (d.mPages.size() > 1)
+            {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Remove")) remove = i;
+            }
+            changed |= InputLabel("Title", d.mPages[i].mTitle);
+            changed |= InputMultiline("##text", d.mPages[i].mText);
+            ImGui::PopID();
+            ImGui::Spacing();
+        }
+        if (remove >= 0)
+        {
+            d.mPages.erase(d.mPages.begin() + remove);
+            changed = true;
+        }
+        if ((int)d.mPages.size() < ModDisclaimerSettings::kMaxPages && ImGui::Button("Add page"))
+        {
+            d.mPages.push_back({"Notice", ""});
+            changed = true;
+        }
+        ImGui::TextDisabled("A change to any title or text asks players who accepted before to accept again.");
+    }
+    if (ImGui::CollapsingHeader("Buttons and timing", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= InputLabel("Accept", d.mAcceptLabel);
+        changed |= InputLabel("Decline", d.mDeclineLabel);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quits a packaged game.");
+        ImGui::SetNextItemWidth(120.0f);
+        changed |= ImGui::DragFloat("Seconds per page (accepted)", &d.mHoldSeconds, 0.1f, 0.0f, 30.0f, "%.1f s");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Once accepted, later runs show each page this long (A / Start skips) and go on.");
+        }
+        changed |= AssetPicker("Next Scene", d.mNextScene, Scene::GetStaticType());
+        ImGui::TextDisabled("Opened after the last page: the launcher, usually.");
+    }
+    if (ImGui::CollapsingHeader("Background and panel", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= ImGui::Checkbox("Show background", &d.mShowBackground);
+        changed |= AssetPicker("Background", d.mBackground, Texture::GetStaticType());
+        changed |= ImGui::Checkbox("Tint the picture", &d.mTintBackground);
+        changed |= ImGui::ColorEdit4(d.mBackground.Get() != nullptr && !d.mTintBackground ? "Background color (no picture)"
+                                                                                            : "Background tint",
+                                     &d.mBackgroundColor.x, ImGuiColorEditFlags_AlphaBar);
+        changed |= ImGui::Checkbox("Full screen panel", &d.mPanelFullScreen);
+        if (d.mPanelFullScreen) ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Panel size", &d.mPanelSize.x, 1.0f, 200.0f, 4096.0f, "%.0f px");
+        if (d.mPanelFullScreen) ImGui::EndDisabled();
+        ImGui::TextDisabled("Panel, buttons, fonts and sounds follow the Menu Style.");
+    }
+    ImGui::EndChild();
+
+    if (changed)
+    {
+        map->SetDirtyFlag();
+        if (sDisclaimerLive) ModDisclaimer_RestyleOpen(*map);
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(260.0f);
+    ImGui::InputText("Scene", sDisclaimerScene, sizeof(sDisclaimerScene));
+    ImGui::SameLine();
+    ImGui::Checkbox("Live preview", &sDisclaimerLive);
+    const bool exists = FetchAssetStub(sDisclaimerScene) != nullptr;
+    if (ImGui::Button(exists ? "Update Scene" : "Generate Scene", ImVec2(140, 0)))
+    {
+        SaveMap(map);
+        ModDisclaimer_Generate(map, sDisclaimerScene, sDisclaimerMessage);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Saves these settings with the Mod Map and makes / updates the disclaimer scene.\n"
+                          "Nodes you changed or added stay; the look is applied again.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save", ImVec2(90, 0)))
+    {
+        SaveMap(map);
+        sDisclaimerMessage = sStatus;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to defaults", ImVec2(150, 0)))
+    {
+        d = ModDisclaimerSettings();
+        map->SetDirtyFlag();
+        if (sDisclaimerLive) ModDisclaimer_RestyleOpen(*map);
+    }
+    if (!sDisclaimerMessage.empty())
+    {
+        ImGui::TextWrapped("%s", sDisclaimerMessage.c_str());
+    }
+}
+
 // ---- inspector, create asset ---------------------------------------------------------------
 void DrawModMapInspector(void* object, void*)
 {
@@ -1706,6 +1859,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->RegisterWindow(hookId, "Display Settings", kDisplayWindow, DrawDisplaySettings, nullptr);
         hooks->RegisterWindow(hookId, "Menu Style", kStyleWindow, DrawMenuStyle, nullptr);
         hooks->RegisterWindow(hookId, "Launcher", kLauncherWindow, DrawLauncher, nullptr);
+        hooks->RegisterWindow(hookId, "Disclaimer", kDisclaimerWindow, DrawDisclaimer, nullptr);
 #if MODBASE_HAS_MODALS
         if (hooks->OpenModal == nullptr)
 #endif
@@ -1727,6 +1881,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Display Settings", OpenWindow, (void*)kDisplayWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Menu Style", OpenWindow, (void*)kStyleWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Launcher", OpenWindow, (void*)kLauncherWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Disclaimer", OpenWindow, (void*)kDisclaimerWindow, nullptr);
     }
     if (hooks->RegisterInspector != nullptr)
     {

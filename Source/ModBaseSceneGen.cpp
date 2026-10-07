@@ -7,6 +7,7 @@
 
 #if EDITOR
 
+#include "ModBaseDisclaimer.h"
 #include "ModBaseDisplay.h"
 #include "ModBaseLauncher.h"
 #include "ModBaseModMap.h"
@@ -801,6 +802,145 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
     outMessage = std::string(updating ? "Updated " : "Created ") + stub->mName + ": " + std::to_string(b.added) +
                  " node(s) added" + (updating ? ", " + std::to_string(b.kept) + " kept as they were" : std::string()) +
                  ". Make it the scene the game opens with, and pick the Game Scene in the Launcher window." + modsNote;
+    LogDebug("Mods: %s", outMessage.c_str());
+    return true;
+}
+
+// ---- the disclaimer ------------------------------------------------------------------------
+namespace
+{
+int RestyleDisclaimers(Node* node, const ModMap& map)
+{
+    if (node == nullptr) return 0;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        if (node->GetChild((int32_t)i)->As<RecompDisclaimer>() != nullptr)
+        {
+            ModDisclaimer_ApplyLook(node, map);
+            return 1;
+        }
+    }
+    int count = 0;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        count += RestyleDisclaimers(node->GetChild((int32_t)i), map);
+    }
+    return count;
+}
+}
+
+std::string ModDisclaimer_DefaultName(const ModMap* map)
+{
+    std::string name = ModScene_DefaultName(map);
+    const size_t at = name.rfind("ModSettings");
+    if (at != std::string::npos) name.resize(at);
+    return name + "Disclaimer";
+}
+
+int ModDisclaimer_RestyleOpen(const ModMap& map)
+{
+    World* world = GetWorld(0);
+    return world != nullptr ? RestyleDisclaimers(world->GetRootNode(), map) : 0;
+}
+
+bool ModDisclaimer_Generate(ModMap* map, const std::string& sceneNameIn, std::string& outMessage)
+{
+    if (map == nullptr)
+    {
+        outMessage = "No Mod Map selected.";
+        return false;
+    }
+    const std::string sceneName = sceneNameIn.empty() ? ModDisclaimer_DefaultName(map) : sceneNameIn;
+    AssetStub* stub = nullptr;
+    Scene* scene = nullptr;
+    bool updating = false;
+    NodePtr root = OpenOrCreate(sceneName, stub, scene, updating, "Disclaimer", outMessage);
+    if (root.Get() == nullptr)
+    {
+        return false;
+    }
+    if (root->As<Widget>() == nullptr)
+    {
+        outMessage = sceneName + "'s root is not a widget: left as it is.";
+        return false;
+    }
+
+    Builder b;
+    b.Ensure<Quad>(root.Get(), "Background", [&](Quad* q) { Full(q); });
+    // a container that draws nothing; its fill a Quad of its own under the content (as the launcher's)
+    Widget* panel = b.Ensure<Widget>(root.Get(), "Panel", [&](Widget* w) { Full(w); });
+    if (panel == nullptr || panel->As<Quad>() != nullptr)
+    {
+        outMessage = "Panel exists but is not a plain widget: left as it is.";
+        return false;
+    }
+    b.Ensure<Quad>(panel, "PanelBackground", [&](Quad* q) {
+        Full(q);
+        q->SetColor(kPanelColor);
+        q->Attach(panel, false, 0);
+    });
+    Widget* body = Array(b, panel, "Body", false, 0.0f, 0.0f, Filled());
+    ScrollContainer* scroll = Scroll(b, body, "Scroll", false, [](Widget* w) { FillRest(w); });
+    Widget* layout = Array(b, scroll, "Layout", false, kLauncherGap, 16.0f, At(0.0f, 0.0f, 0.0f, 400.0f), true);
+    if (body == nullptr || scroll == nullptr || layout == nullptr)
+    {
+        outMessage = "Panel/Body/Scroll/Layout exists with other types (or the engine has no ArrayWidget): left as it is.";
+        return false;
+    }
+    auto centred = [](Text* t) {
+        if (t != nullptr) t->SetHorizontalJustification(Justification::Center);
+    };
+    centred(Label(b, layout, "Title", "Disclaimer", FullWidth(40.0f), 28.0f, kHeaderColor));
+    centred(Label(b, layout, "Progress", "1 / 2", FullWidth(18.0f), 13.0f, kDimColor));
+    centred(Label(b, layout, "Text", "", FullWidth(80.0f), kFontSize, kTextColor));
+    Widget* buttons = Array(b, layout, "Buttons", false, 6.0f, 0.0f, FullWidth(2 * (kLauncherButtonH + 6.0f)));
+    RecompButton* accept = SettingButton(b, buttons, "Accept", "I Agree", "@disclaimer:accept", 1, FullWidth(kLauncherButtonH));
+    RecompButton* decline = SettingButton(b, buttons, "Decline", "Quit", "@disclaimer:decline", 1, FullWidth(kLauncherButtonH));
+    for (RecompButton* btn : {accept, decline})
+    {
+        if (btn != nullptr) btn->SetLabelFormat("");
+    }
+    LinkNavigation({{accept}, {decline}});
+
+    RecompMenuController* controller = b.Ensure<RecompMenuController>(root.Get(), "MenuController", [&](RecompMenuController* c) {
+        Place(c, 0.0f, 0.0f, 0.0f, 0.0f);
+        c->Setup(map->mTitle.empty() ? std::string("Disclaimer") : map->mTitle + " disclaimer", true, true, accept);
+    });
+    if (controller != nullptr)
+    {
+        // always shown, the gamepad moves over its buttons, B doesn't close it
+        controller->SetPanel(panel);
+        controller->SetInHomeMenu(false);
+        controller->SetToggleButton(-1);
+        controller->SetCloseOnBack(false);
+        root->SetVisible(true);
+    }
+    b.Ensure<RecompDisclaimer>(root.Get(), "Disclaimer", [&](RecompDisclaimer* n) { Place(n, 0.0f, 0.0f, 0.0f, 0.0f); });
+
+    ModDisclaimer_ApplyLook(root.Get(), *map);
+
+    if (!updating)
+    {
+        std::string error;
+        AssetDir* dir = SceneDir(error);
+        if (dir == nullptr)
+        {
+            outMessage = error;
+            return false;
+        }
+        stub = EditorAddUniqueAsset(sceneName.c_str(), dir, Scene::GetStaticType(), true);
+        scene = (stub && stub->mAsset) ? stub->mAsset->As<Scene>() : nullptr;
+        if (scene == nullptr)
+        {
+            outMessage = "Cannot create the Scene asset " + sceneName;
+            return false;
+        }
+    }
+    scene->Capture(root.Get());
+    AssetManager::Get()->SaveAsset(*stub);
+    outMessage = std::string(updating ? "Updated " : "Created ") + stub->mName + ": " + std::to_string(b.added) +
+                 " node(s) added" + (updating ? ", " + std::to_string(b.kept) + " kept as they were" : std::string()) +
+                 ". Make it the scene the game opens with, and set Next Scene (the launcher).";
     LogDebug("Mods: %s", outMessage.c_str());
     return true;
 }

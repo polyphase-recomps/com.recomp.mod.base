@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 11;
+constexpr uint32_t kModMapVersion = 12;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -174,6 +174,49 @@ void WriteFooter8(Stream& stream, const ModLauncherSettings& l)
     stream.WriteString(l.mVersionFormat);
 }
 
+// version 12: the disclaimer
+void ReadDisclaimer(Stream& stream, ModDisclaimerSettings& d)
+{
+    const uint32_t count = stream.ReadUint32();
+    d.mPages.clear();
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        ModDisclaimerPage page;
+        stream.ReadString(page.mTitle);
+        stream.ReadString(page.mText);
+        if ((int)d.mPages.size() < ModDisclaimerSettings::kMaxPages) d.mPages.push_back(page);
+    }
+    stream.ReadString(d.mAcceptLabel);
+    stream.ReadString(d.mDeclineLabel);
+    stream.ReadAsset(d.mBackground);
+    d.mBackgroundColor = stream.ReadVec4();
+    const uint8_t flags = stream.ReadUint8();
+    d.mTintBackground = (flags & 1) != 0;
+    d.mShowBackground = (flags & 2) != 0;
+    d.mPanelFullScreen = (flags & 4) != 0;
+    d.mPanelSize = stream.ReadVec2();
+    stream.ReadAsset(d.mNextScene);
+    d.mHoldSeconds = stream.ReadFloat();
+}
+
+void WriteDisclaimer(Stream& stream, const ModDisclaimerSettings& d)
+{
+    stream.WriteUint32((uint32_t)d.mPages.size());
+    for (const ModDisclaimerPage& page : d.mPages)
+    {
+        stream.WriteString(page.mTitle);
+        stream.WriteString(page.mText);
+    }
+    stream.WriteString(d.mAcceptLabel);
+    stream.WriteString(d.mDeclineLabel);
+    stream.WriteAsset(d.mBackground);
+    stream.WriteVec4(d.mBackgroundColor);
+    stream.WriteUint8((uint8_t)((d.mTintBackground ? 1 : 0) | (d.mShowBackground ? 2 : 0) | (d.mPanelFullScreen ? 4 : 0)));
+    stream.WriteVec2(d.mPanelSize);
+    stream.WriteAsset(d.mNextScene);
+    stream.WriteFloat(d.mHoldSeconds);
+}
+
 void ReadLauncher(Stream& stream, ModLauncherSettings& l)
 {
     stream.ReadString(l.mTitle);
@@ -325,11 +368,16 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         mLauncher.mCenterContent = stream.ReadUint8() != 0;
     }
+    mDisclaimer = ModDisclaimerSettings();
     if (version >= 11)
     {
         const uint8_t flags = stream.ReadUint8();
         mStyle.mPanelBackground = (flags & 1) != 0;
         mLauncher.mShowBackground = (flags & 2) != 0;
+    }
+    if (version >= 12)
+    {
+        ReadDisclaimer(stream, mDisclaimer);
     }
 }
 
@@ -389,6 +437,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     stream.WriteFloat(mLauncher.mFooterTextSize); // version 9
     stream.WriteUint8(mLauncher.mCenterContent ? 1 : 0); // version 10
     stream.WriteUint8((uint8_t)((mStyle.mPanelBackground ? 1 : 0) | (mLauncher.mShowBackground ? 2 : 0))); // 11
+    WriteDisclaimer(stream, mDisclaimer); // version 12
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)
