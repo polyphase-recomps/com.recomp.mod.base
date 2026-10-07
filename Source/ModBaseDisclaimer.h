@@ -10,7 +10,7 @@
  *   editor, the game's save storage when packaged) with a fingerprint of the pages' text;
  * - later runs show each page for Hold Seconds (A / Start skips it) and go on to Next Scene. A
  *   change to the text asks again.
- * The page's text goes to the Title / Progress / Text texts of its UI.
+ * The page's text goes to the Title / Progress / PageText texts of its UI.
  */
 #pragma once
 

@@ -93,16 +93,41 @@ float FitColumn(Widget* column)
     return total;
 }
 
+// A node of the UI by name, depth first, not looking inside widgets' own parts (transient
+// children: a ScrollContainer's scroll buttons each have a "Text", found before the content).
+Node* FindNamed(Node* node, const char* name)
+{
+    if (node == nullptr) return nullptr;
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        Node* child = node->GetChild((int32_t)i);
+        if (!child->IsTransient() && child->GetName() == name) return child;
+    }
+    for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
+    {
+        Node* child = node->GetChild((int32_t)i);
+        if (child->IsTransient()) continue;
+        if (Node* found = FindNamed(child, name)) return found;
+    }
+    return nullptr;
+}
+
 Text* FindText(Node* root, const char* name)
 {
-    Node* node = root != nullptr ? root->FindChild(name, true) : nullptr;
+    Node* node = FindNamed(root, name);
     return node != nullptr ? node->As<Text>() : nullptr;
 }
 
 RecompButton* FindButton(Node* root, const char* name)
 {
-    Node* node = root != nullptr ? root->FindChild(name, true) : nullptr;
+    Node* node = FindNamed(root, name);
     return node != nullptr ? node->As<RecompButton>() : nullptr;
+}
+
+Widget* FindWidget(Node* root, const char* name)
+{
+    Node* node = FindNamed(root, name);
+    return node != nullptr ? node->As<Widget>() : nullptr;
 }
 
 std::string AgreedSaveName(const std::string& saveName)
@@ -180,7 +205,7 @@ void RecompDisclaimer::ShowPage(int index)
     mTimer = mHoldSeconds;
     Node* root = GetParent();
     if (Text* t = FindText(root, "Title")) t->SetText(mTitles[mPage]);
-    if (Text* t = FindText(root, "Text")) t->SetText(mTexts[mPage]);
+    if (Text* t = FindText(root, "PageText")) t->SetText(mTexts[mPage]);
     if (Text* t = FindText(root, "Progress"))
     {
         char progress[32];
@@ -204,18 +229,20 @@ void RecompDisclaimer::ShowPage(int index)
 void RecompDisclaimer::FitText()
 {
     Node* root = GetParent();
-    Text* text = FindText(root, "Text");
-    Node* layoutNode = root != nullptr ? root->FindChild("Layout", true) : nullptr;
+    Text* text = FindText(root, "PageText");
+    Node* layoutNode = FindNamed(root, "Layout");
     Widget* layout = layoutNode != nullptr ? layoutNode->As<Widget>() : nullptr;
     if (text == nullptr || layout == nullptr)
     {
         return;
     }
     const float scale = text->GetAbsoluteScale().y > 0.0f ? text->GetAbsoluteScale().y : 1.0f;
-    const float height = std::ceil(text->GetTextHeight() / scale) + 4.0f;
+    // (no text: the engine's extents stay at their unset extremes)
+    const float measured = text->GetTextHeight();
+    const float height = measured > 0.0f && measured < 1.0e6f ? std::ceil(measured / scale) + 4.0f : 4.0f;
     bool changed = std::fabs(text->GetHeight() - height) > 1.0f;
     if (changed) text->SetHeight(height);
-    if (Node* node = root->FindChild("Buttons", true))
+    if (Node* node = FindNamed(root, "Buttons"))
     {
         if (Widget* w = node->As<Widget>())
         {
@@ -445,8 +472,8 @@ void ModDisclaimer_ApplyLook(Node* root, const ModMap& map)
     };
     style("Title", header, s.mTitleSize * 1.4f, s.mTitleColor);
     style("Progress", body, s.mNoteSize, s.mInfoColor);
-    style("Text", body, s.mLabelSize, s.mLabelColor);
-    if (Text* t = FindText(root, "Text")) t->EnableWordWrap(true);
+    style("PageText", body, s.mLabelSize, s.mLabelColor);
+    if (Text* t = FindText(root, "PageText")) t->EnableWordWrap(true);
 
     if (Node* node = root->FindChild("Background", false))
     {
@@ -500,11 +527,11 @@ void ModDisclaimer_ApplyLook(Node* root, const ModMap& map)
             controller->SetPanelFit(d.mPanelFullScreen ? glm::vec2(0.0f) : d.mPanelSize, 16.0f, 0);
         }
     }
-    if (Node* node = root->FindChild("Buttons", true))
+    if (Node* node = FindNamed(root, "Buttons"))
     {
         if (Widget* w = node->As<Widget>()) FitColumn(w);
     }
-    if (Node* node = root->FindChild("Layout", true))
+    if (Node* node = FindNamed(root, "Layout"))
     {
         Widget* layout = node->As<Widget>();
         if (layout != nullptr && node->GetParent() != nullptr && node->GetParent()->As<ScrollContainer>() != nullptr)

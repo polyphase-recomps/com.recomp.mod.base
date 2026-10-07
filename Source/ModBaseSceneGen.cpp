@@ -892,7 +892,12 @@ bool ModDisclaimer_Generate(ModMap* map, const std::string& sceneNameIn, std::st
     };
     centred(Label(b, layout, "Title", "Disclaimer", FullWidth(40.0f), 28.0f, kHeaderColor));
     centred(Label(b, layout, "Progress", "1 / 2", FullWidth(18.0f), 13.0f, kDimColor));
-    centred(Label(b, layout, "Text", "", FullWidth(80.0f), kFontSize, kTextColor));
+    // (a disclaimer made before: its page text was named "Text", as a Button's own label is)
+    if (Node* old = layout->FindChild("Text", false); old != nullptr && old->As<Text>() != nullptr)
+    {
+        old->SetName("PageText");
+    }
+    centred(Label(b, layout, "PageText", "", FullWidth(80.0f), kFontSize, kTextColor));
     Widget* buttons = Array(b, layout, "Buttons", false, 6.0f, 0.0f, FullWidth(2 * (kLauncherButtonH + 6.0f)));
     RecompButton* accept = SettingButton(b, buttons, "Accept", "I Agree", "@disclaimer:accept", 1, FullWidth(kLauncherButtonH));
     RecompButton* decline = SettingButton(b, buttons, "Decline", "Quit", "@disclaimer:decline", 1, FullWidth(kLauncherButtonH));
