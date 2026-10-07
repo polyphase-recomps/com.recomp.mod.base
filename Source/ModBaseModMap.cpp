@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 3;
+constexpr uint32_t kModMapVersion = 4;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -69,6 +69,34 @@ void WriteStyle(Stream& stream, const ModStyle& s)
     stream.WriteVec4(s.mValueColor);
     stream.WriteFloat(s.mValueSize);
     stream.WriteFloat(s.mNoteSize);
+}
+
+// version 4: the style's and the launcher's later settings
+void ReadLook4(Stream& stream, ModStyle& s, ModLauncherSettings& l)
+{
+    const uint8_t flags = stream.ReadUint8();
+    s.mShowHighlight = (flags & 1) != 0;
+    s.mButtonStateTint = (flags & 2) != 0;
+    l.mTintBackground = (flags & 4) != 0;
+    l.mPanelFullScreen = (flags & 8) != 0;
+    s.mButtonUvScale = stream.ReadVec2();
+    s.mButtonUvOffset = stream.ReadVec2();
+    s.mButtonFit = stream.ReadUint8();
+    stream.ReadAsset(s.mHeaderFont);
+    stream.ReadAsset(s.mBodyFont);
+    stream.ReadAsset(s.mButtonFont);
+}
+
+void WriteLook4(Stream& stream, const ModStyle& s, const ModLauncherSettings& l)
+{
+    stream.WriteUint8((uint8_t)((s.mShowHighlight ? 1 : 0) | (s.mButtonStateTint ? 2 : 0) | (l.mTintBackground ? 4 : 0) |
+                                (l.mPanelFullScreen ? 8 : 0)));
+    stream.WriteVec2(s.mButtonUvScale);
+    stream.WriteVec2(s.mButtonUvOffset);
+    stream.WriteUint8(s.mButtonFit);
+    stream.WriteAsset(s.mHeaderFont);
+    stream.WriteAsset(s.mBodyFont);
+    stream.WriteAsset(s.mButtonFont);
 }
 
 void ReadLauncher(Stream& stream, ModLauncherSettings& l)
@@ -194,6 +222,10 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadLauncher(stream, mLauncher);
     }
+    if (version >= 4)
+    {
+        ReadLook4(stream, mStyle, mLauncher);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -244,6 +276,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     }
     WriteStyle(stream, mStyle);
     WriteLauncher(stream, mLauncher);
+    WriteLook4(stream, mStyle, mLauncher);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)

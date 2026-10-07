@@ -23,6 +23,7 @@
 #include "Engine.h"
 #include "Input/InputTypes.h"
 #include "Log.h"
+#include "Nodes/Widgets/Quad.h"
 #include "Plugins/EditorUIHooks.h"
 
 #include "imgui.h"
@@ -1136,6 +1137,51 @@ void UpdateStyledScene(ModMap* map)
 {
     SaveMap(map);
     ModScene_ApplyStyle(map, sStyleScene, sStyleMessage);
+    // the launcher follows the menu style too
+    if (FetchAssetStub(ModLauncher_DefaultName(map)) != nullptr)
+    {
+        std::string launcher;
+        ModLauncher_ApplyLookToScene(map, "", launcher);
+        sStyleMessage += "\n" + launcher;
+    }
+}
+
+// The engine's Crop Texture (its texture crop editor, which addons can't open themselves): a
+// Quad of our own, never in a level, carries the texture and the UVs through it.
+bool CropTextureButton(Texture* texture, glm::vec2& uvScale, glm::vec2& uvOffset)
+{
+    static SharedPtr<Quad> sCropQuad;
+    if (texture == nullptr)
+    {
+        ImGui::BeginDisabled();
+        ImGui::Button("Crop Texture");
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            ImGui::SetTooltip("Pick the Normal texture first.");
+        }
+        return false;
+    }
+    if (sCropQuad.Get() == nullptr)
+    {
+        sCropQuad = Node::Construct<Quad>();
+    }
+    Quad* quad = sCropQuad.Get();
+    if (quad->GetTexture() != texture) quad->SetTexture(texture);
+    quad->SetUvScale(uvScale);
+    quad->SetUvOffset(uvOffset);
+    static bool sUnused = false;
+    Property crop(DatumType::Bool, "Crop Texture", quad, &sUnused);
+    quad->DrawCustomProperty(crop); // the button, and the crop editor's popup while it is open
+    const glm::vec2 scale = quad->GetUvScale();
+    const glm::vec2 offset = quad->GetUvOffset();
+    if (scale == uvScale && offset == uvOffset)
+    {
+        return false;
+    }
+    uvScale = scale;
+    uvOffset = offset;
+    return true;
 }
 
 void DrawMenuStyle(void*)
@@ -1207,17 +1253,59 @@ void DrawMenuStyle(void*)
         }
         ImGui::TextDisabled("A state without a texture uses Normal's. Hovered = mouse over; the gamepad's\n"
                             "selected button gets the border below.");
+        changed |= ImGui::Checkbox("State colors tint the whole button", &s.mButtonStateTint);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("On: hovering, pressing or selecting a button tints all of it with that state's color.\n"
+                              "Off: every state keeps the Normal color (white = a texture as it is); the state\n"
+                              "textures still change, and the gamepad's selection shows by the border.");
+        }
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Texture");
+        changed |= CropTextureButton(s.mButtonTextures[ModStyle::Normal].Get<Texture>(), s.mButtonUvScale,
+                                     s.mButtonUvOffset);
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("UV Scale", &s.mButtonUvScale.x, 0.005f, 0.0f, 16.0f, "%.3f");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("UV Offset", &s.mButtonUvOffset.x, 0.005f, -16.0f, 16.0f, "%.3f");
+        int fit = s.mButtonFit;
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::Combo("Object Fit", &fit, "Fill\0Contain\0Cover\0None\0"))
+        {
+            s.mButtonFit = (uint8_t)fit;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("How a button's texture fits it: Contain = all of it, its shape kept;\n"
+                              "Cover = fills the button, cropped; Fill = stretched; None = its own size.");
+        }
+        ImGui::Spacing();
         color("Text color##button", s.mButtonTextColor);
         size("Button text size", s.mButtonTextSize);
         size("Tab text size", s.mTabTextSize);
-        color("Selected border", s.mHighlightColor);
+        changed |= ImGui::Checkbox("Selected border", &s.mShowHighlight);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("The border around the button the gamepad (or keyboard) has selected.");
+        }
+        if (!s.mShowHighlight) ImGui::BeginDisabled();
+        ImGui::SameLine();
+        changed |= ImGui::ColorEdit4("##border", &s.mHighlightColor.x,
+                                     ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_NoInputs);
         ImGui::SetNextItemWidth(120.0f);
         changed |= ImGui::DragFloat("Border width", &s.mHighlightWidth, 0.1f, 0.0f, 12.0f, "%.1f px");
+        if (!s.mShowHighlight) ImGui::EndDisabled();
     }
     if (ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen))
     {
         changed |= AssetPicker("Font", s.mFont, Font::GetStaticType());
-        ImGui::TextDisabled("(none) = the engine's default font. Used by the buttons too.");
+        ImGui::TextDisabled("(none) = the engine's default font. The fonts below default to it.");
+        changed |= AssetPicker("Header font", s.mHeaderFont, Font::GetStaticType());
+        changed |= AssetPicker("Body font", s.mBodyFont, Font::GetStaticType());
+        changed |= AssetPicker("Button font", s.mButtonFont, Font::GetStaticType());
+        ImGui::TextDisabled("Header: titles. Body: labels, values, notes, the launcher's subtitle,\n"
+                            "ROM line and messages. Button: buttons and tabs.");
         color("Title color", s.mTitleColor);
         size("Title size", s.mTitleSize);
         color("Label color", s.mLabelColor);
@@ -1232,7 +1320,11 @@ void DrawMenuStyle(void*)
     if (changed)
     {
         map->SetDirtyFlag();
-        if (sStyleLive) ModScene_RestyleOpen(s);
+        if (sStyleLive)
+        {
+            ModScene_RestyleOpen(s);
+            ModLauncher_RestyleOpen(*map);
+        }
     }
     ImGui::Separator();
     ImGui::SetNextItemWidth(260.0f);
@@ -1263,7 +1355,11 @@ void DrawMenuStyle(void*)
     {
         s = ModStyle();
         map->SetDirtyFlag();
-        if (sStyleLive) ModScene_RestyleOpen(s);
+        if (sStyleLive)
+        {
+            ModScene_RestyleOpen(s);
+            ModLauncher_RestyleOpen(*map);
+        }
     }
     if (!sStyleMessage.empty())
     {
@@ -1332,15 +1428,31 @@ void DrawLauncher(void*)
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::DragFloat2("Logo size", &l.mLogoSize.x, 1.0f, 16.0f, 2048.0f, "%.0f px");
         changed |= AssetPicker("Background", l.mBackground, Texture::GetStaticType());
-        changed |= ImGui::ColorEdit4("Background tint", &l.mBackgroundColor.x, ImGuiColorEditFlags_AlphaBar);
+        changed |= ImGui::Checkbox("Tint the picture", &l.mTintBackground);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Off: the background picture as it is. Without a picture the color below is the fill.");
+        }
+        changed |= ImGui::ColorEdit4(l.mBackground.Get() != nullptr && !l.mTintBackground ? "Background color (no picture)"
+                                                                                            : "Background tint",
+                                     &l.mBackgroundColor.x, ImGuiColorEditFlags_AlphaBar);
         ImGui::TextDisabled("The panel, buttons and fonts follow the Menu Style (Tools > Recomp > Mods > Menu Style).");
     }
     if (ImGui::CollapsingHeader("Panel and buttons", ImGuiTreeNodeFlags_DefaultOpen))
     {
+        changed |= ImGui::Checkbox("Full screen", &l.mPanelFullScreen);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("On: the panel fills the screen, in play as in the editor.\n"
+                              "Off: in play it is fitted to the screen: at most Panel size, by Position.\n"
+                              "(The editor shows the panel full size either way.)");
+        }
+        if (l.mPanelFullScreen) ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::DragFloat2("Panel size", &l.mPanelSize.x, 1.0f, 200.0f, 4096.0f, "%.0f px");
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::Combo("Position", &l.mPosition, "Centre\0Left\0Right\0");
+        if (l.mPanelFullScreen) ImGui::EndDisabled();
         changed |= InputLabel("Play", l.mPlayLabel);
         changed |= InputLabel("Choose ROM", l.mBrowseLabel);
         changed |= InputLabel("Forget ROM", l.mForgetLabel);

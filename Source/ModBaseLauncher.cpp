@@ -214,21 +214,34 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     const ModLauncherSettings& l = map.mLauncher;
     ModStyle_Apply(root, s); // panel, buttons, the title's size and color
 
-    Font* font = s.mFont.Get<Font>();
-    if (font == nullptr) font = LoadAsset<Font>("F_Roboto32");
+    Font* header = ModStyle_Font(s, s.mHeaderFont);
+    Font* body = ModStyle_Font(s, s.mBodyFont);
     const std::string title = !l.mTitle.empty() ? l.mTitle : (!map.mTitle.empty() ? map.mTitle : std::string("Game"));
-    StyleText(root, "Title", font, s.mTitleSize * 1.4f, s.mTitleColor, &title);
-    StyleText(root, "Subtitle", font, s.mLabelSize, s.mInfoColor, &l.mSubtitle);
+    StyleText(root, "Title", header, s.mTitleSize * 1.4f, s.mTitleColor, &title);
+    StyleText(root, "Subtitle", body, s.mLabelSize, s.mInfoColor, &l.mSubtitle);
     if (Node* sub = root->FindChild("Subtitle", true)) sub->SetVisible(!l.mSubtitle.empty());
-    StyleText(root, "Rom", font, s.mValueSize, s.mValueColor, nullptr);
-    StyleText(root, "Message", font, s.mNoteSize, s.mInfoColor, nullptr);
+    StyleText(root, "Rom", body, s.mValueSize, s.mValueColor, nullptr);
+    StyleText(root, "Message", body, s.mNoteSize, s.mInfoColor, nullptr);
 
     if (Node* node = root->FindChild("Background", false))
     {
         if (Quad* q = node->As<Quad>())
         {
-            q->SetColor(l.mBackgroundColor);
-            q->SetTexture(l.mBackground.Get<Texture>());
+            Texture* picture = l.mBackground.Get<Texture>();
+            // a picture untinted shows as it is; without one the color is the fill
+            q->SetColor(picture != nullptr && !l.mTintBackground ? glm::vec4(1.0f) : l.mBackgroundColor);
+            q->SetTexture(picture);
+        }
+    }
+    if (Node* node = root->FindChild("Panel", false))
+    {
+        // full screen: stretched over the whole UI, as the editor shows it (the controller
+        // doesn't fit it then)
+        Widget* panel = node->As<Widget>();
+        if (panel != nullptr && l.mPanelFullScreen)
+        {
+            panel->SetAnchorMode(AnchorMode::FullStretch);
+            panel->SetRatios(0.0f, 0.0f, 1.0f, 1.0f);
         }
     }
     if (Node* node = root->FindChild("Logo", true))
@@ -290,7 +303,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
         }
         else if (RecompMenuController* controller = child->As<RecompMenuController>())
         {
-            controller->SetPanelFit(l.mPanelSize, 16.0f, l.mPosition);
+            controller->SetPanelFit(l.mPanelFullScreen ? glm::vec2(0.0f) : l.mPanelSize, 16.0f, l.mPosition);
         }
     }
 }

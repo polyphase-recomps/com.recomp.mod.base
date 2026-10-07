@@ -58,6 +58,10 @@ struct ModStyle;
 // Panel's tint / texture, every RecompButton (state textures and colors, text, selection
 // border; tabs use the tab text size), and the Title / Label / Value / Note texts.
 MODBASE_API void ModStyle_Apply(Node* root, const ModStyle& style);
+// The font of a text role (header / body / button font), else the style's font, else the engine's.
+class Font;
+class AssetRef;
+MODBASE_API Font* ModStyle_Font(const ModStyle& style, const AssetRef& role);
 
 class MODBASE_API RecompText : public Text
 {
@@ -82,7 +86,11 @@ public:
 
     virtual void Activate() override;
     virtual void Tick(float deltaTime) override;
+    virtual void PreRender() override;
     virtual void GatherProperties(std::vector<Property>& outProps) override;
+
+    // How the texture fits the button (ObjectFit: 0 fill, 1 contain, 2 cover, 3 none).
+    void SetTextureFit(uint8_t fit);
 
     // Setting mode: Direction +1 steps up / toggles / next choice / runs an action,
     // -1 steps down / previous choice.
@@ -110,6 +118,7 @@ protected:
     float mHighlightWidth = 3.0f;
     bool mHighlighted = false;
     int32_t mPending = 0;
+    uint8_t mTextureFit = 1; // contain
 };
 
 class MODBASE_API RecompBar : public ProgressBar

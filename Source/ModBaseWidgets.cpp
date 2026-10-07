@@ -567,6 +567,23 @@ void RecompButton::Tick(float deltaTime)
     }
 }
 
+void RecompButton::PreRender()
+{
+    Button::PreRender();
+    Quad* quad = GetQuad();
+    const ObjectFit fit = mTextureFit < uint8_t(ObjectFit::Count) ? ObjectFit(mTextureFit) : ObjectFit::Contain;
+    if (quad != nullptr && quad->GetObjectFit() != fit)
+    {
+        quad->SetObjectFit(fit);
+    }
+}
+
+void RecompButton::SetTextureFit(uint8_t fit)
+{
+    mTextureFit = fit;
+    MarkDirty();
+}
+
 void RecompButton::SetHighlight(glm::vec4 color, float width)
 {
     mHighlightColor = color;
@@ -585,6 +602,9 @@ void RecompButton::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::String, "Label Format", this, &mLabelFormat));
     outProps.push_back(Property(DatumType::Color, "Highlight Color", this, &mHighlightColor));
     outProps.push_back(Property(DatumType::Float, "Highlight Width", this, &mHighlightWidth));
+    static const char* kFits[] = {"Fill", "Contain", "Cover", "None"};
+    outProps.push_back(Property(DatumType::Byte, "Texture Fit", this, &mTextureFit, 1, nullptr, NULL_DATUM,
+                                int32_t(ObjectFit::Count), kFits));
     outProps.push_back(Property(DatumType::String, "Setting", this, &mSetting));
     outProps.push_back(Property(DatumType::Integer, "Direction", this, &mDirection));
     outProps.push_back(Property(DatumType::String, "Request", this, &mRequest));
@@ -676,7 +696,14 @@ bool HasButton(Node* row)
     return false;
 }
 
-void ApplyStyle(Node* node, const ModStyle& s, Font* font)
+struct StyleFonts
+{
+    Font* header;
+    Font* body;
+    Font* button;
+};
+
+void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
 {
     if (node->IsTransient())
     {
@@ -694,23 +721,32 @@ void ApplyStyle(Node* node, const ModStyle& s, Font* font)
         b->SetHoveredColor(s.mButtonColors[ModStyle::Hovered]);
         b->SetPressedColor(s.mButtonColors[ModStyle::Pressed]);
         b->SetLockedColor(s.mButtonColors[ModStyle::Locked]);
-        b->SetHighlight(s.mHighlightColor, s.mHighlightWidth);
+        b->SetHighlight(s.mHighlightColor, s.mShowHighlight ? s.mHighlightWidth : 0.0f);
+        b->SetUvScale(s.mButtonUvScale);
+        b->SetUvOffset(s.mButtonUvOffset);
+        b->SetTextureFit(s.mButtonFit);
+        // off: every state looks as Normal does (its color, or its texture as it is)
+        b->SetUseQuadStateColor(s.mButtonStateTint);
+        if (!s.mButtonStateTint)
+        {
+            if (Quad* q = b->GetQuad()) q->SetColor(s.mButtonColors[ModStyle::Normal]);
+        }
         const bool tab = parent != nullptr && parent->GetName() == "Tabs";
         if (Text* t = b->GetText())
         {
-            StyleText(t, font, tab ? s.mTabTextSize : s.mButtonTextSize, s.mButtonTextColor);
+            StyleText(t, fonts.button, tab ? s.mTabTextSize : s.mButtonTextSize, s.mButtonTextColor);
         }
         b->MarkDirty();
         return;
     }
     if (Text* t = node->As<Text>())
     {
-        if (name == "Title") StyleText(t, font, s.mTitleSize, s.mTitleColor);
-        else if (name == "Note") StyleText(t, font, s.mNoteSize, s.mInfoColor);
-        else if (name == "Value") StyleText(t, font, s.mValueSize, s.mValueColor);
+        if (name == "Title") StyleText(t, fonts.header, s.mTitleSize, s.mTitleColor);
+        else if (name == "Note") StyleText(t, fonts.body, s.mNoteSize, s.mInfoColor);
+        else if (name == "Value") StyleText(t, fonts.body, s.mValueSize, s.mValueColor);
         else if (name == "Label")
-            StyleText(t, font, s.mLabelSize, (parent != nullptr && HasButton(parent)) ? s.mLabelColor : s.mInfoColor);
-        else t->SetFont(font);
+            StyleText(t, fonts.body, s.mLabelSize, (parent != nullptr && HasButton(parent)) ? s.mLabelColor : s.mInfoColor);
+        else t->SetFont(fonts.body);
     }
     else if (name == "Panel")
     {
@@ -722,9 +758,17 @@ void ApplyStyle(Node* node, const ModStyle& s, Font* font)
     }
     for (uint32_t i = 0; i < node->GetNumChildren(); ++i)
     {
-        ApplyStyle(node->GetChild((int32_t)i), s, font);
+        ApplyStyle(node->GetChild((int32_t)i), s, fonts);
     }
 }
+}
+
+Font* ModStyle_Font(const ModStyle& style, const AssetRef& role)
+{
+    Font* font = role.Get<Font>();
+    if (font == nullptr) font = style.mFont.Get<Font>();
+    if (font == nullptr) font = LoadAsset<Font>("F_Roboto32"); // the engine's default text font
+    return font;
 }
 
 void ModStyle_Apply(Node* root, const ModStyle& style)
@@ -733,12 +777,9 @@ void ModStyle_Apply(Node* root, const ModStyle& style)
     {
         return;
     }
-    Font* font = style.mFont.Get<Font>();
-    if (font == nullptr)
-    {
-        font = LoadAsset<Font>("F_Roboto32"); // the engine's default text font
-    }
-    ApplyStyle(root, style, font);
+    const StyleFonts fonts = {ModStyle_Font(style, style.mHeaderFont), ModStyle_Font(style, style.mBodyFont),
+                              ModStyle_Font(style, style.mButtonFont)};
+    ApplyStyle(root, style, fonts);
 }
 
 // ---- input actions -----------------------------------------------------------------------

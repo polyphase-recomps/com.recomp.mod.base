@@ -91,8 +91,18 @@ struct ModStyle
     float mTabTextSize = 16.0f;
     glm::vec4 mHighlightColor = {1.0f, 0.8f, 0.2f, 1.0f}; // border of the gamepad-selected button
     float mHighlightWidth = 3.0f;
+    bool mShowHighlight = true;                          // that border at all
+    bool mButtonStateTint = true;                        // the state colors tint the whole button (hover, press)
+    // the button textures: the part shown (UV scale / offset, Crop Texture) and how it fits the
+    // button (ObjectFit: 0 fill, 1 contain, 2 cover, 3 none)
+    glm::vec2 mButtonUvScale = {1.0f, 1.0f};
+    glm::vec2 mButtonUvOffset = {0.0f, 0.0f};
+    uint8_t mButtonFit = 1;
     // text
     AssetRef mFont; // empty = the engine default
+    AssetRef mHeaderFont; // titles (empty = mFont)
+    AssetRef mBodyFont;   // labels, values, notes and other text (empty = mFont)
+    AssetRef mButtonFont; // the buttons' and tabs' text (empty = mFont)
     glm::vec4 mTitleColor = {1.0f, 0.85f, 0.35f, 1.0f};
     float mTitleSize = 20.0f;
     glm::vec4 mLabelColor = {1.0f, 1.0f, 1.0f, 1.0f};     // labels of rows you can change
@@ -114,7 +124,9 @@ struct ModLauncherSettings
     glm::vec2 mLogoSize = {320.0f, 120.0f};
     AssetRef mBackground;                                 // full-screen picture behind the panel
     glm::vec4 mBackgroundColor = {0.0f, 0.0f, 0.0f, 1.0f}; // its tint (or the fill without one)
+    bool mTintBackground = true;                          // off: the picture as it is
     glm::vec2 mPanelSize = {440.0f, 460.0f};              // largest panel size (it fits smaller screens)
+    bool mPanelFullScreen = false;                        // the panel fills the screen (Panel size unused)
     int32_t mPosition = 0;                                // 0 centre, 1 left, 2 right
     std::string mPlayLabel = "Play";
     std::string mBrowseLabel = "Choose ROM...";
