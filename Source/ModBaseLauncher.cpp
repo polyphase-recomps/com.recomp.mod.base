@@ -175,20 +175,21 @@ float FloatProperty(Node* node, const char* name, float fallback)
     return fallback;
 }
 
-// An ArrayWidget column as tall as its shown children (it doesn't size itself); the height.
+// An ArrayWidget column as tall as its children (it doesn't size itself); the height. Counted
+// the way ArrayWidget lays them out: hidden children keep their place too.
 float FitColumn(Widget* column)
 {
     const float spacing = FloatProperty(column, "Spacing", 0.0f);
     float total = FloatProperty(column, "Padding Top", 0.0f) + FloatProperty(column, "Padding Bottom", 0.0f);
-    int shown = 0;
+    int count = 0;
     for (uint32_t i = 0; i < column->GetNumChildren(); ++i)
     {
         Widget* w = column->GetChild((int32_t)i)->As<Widget>();
-        if (w == nullptr || !w->IsVisible()) continue;
+        if (w == nullptr) continue;
         total += w->GetHeight();
-        ++shown;
+        ++count;
     }
-    if (shown > 1) total += spacing * float(shown - 1);
+    if (count > 1) total += spacing * float(count - 1);
     column->SetHeight(total);
     return total;
 }
@@ -260,8 +261,8 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
         shown[i]->SetNavDown(i + 1 < shown.size() ? shown[i + 1] : nullptr);
     }
 
-    // the content as tall as what is shown: the scroll view around it (Panel/Scroll) scrolls
-    // when the window is shorter, so the buttons can always be reached
+    // the content's height: the scroll view around it (Panel/Scroll) scrolls when the window is
+    // shorter, so the buttons can always be reached
     if (Node* node = root->FindChild("Buttons", true))
     {
         if (Widget* w = node->As<Widget>()) FitColumn(w);

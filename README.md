@@ -173,7 +173,7 @@ map, then customize:
 - a panel with the logo, title, subtitle and ROM line;
 - what happened last;
 - the buttons Play, Choose ROM..., Forget ROM, Mods and Quit.
-The panel's content is in a scroll view (`Panel/Scroll/Layout`), sized to what is shown: in a
+The panel's content is in a scroll view (`Panel/Scroll/Layout`), sized to its contents: in a
 window too short for it, it scrolls (mouse wheel, scrollbar, the gamepad follows the selection).
 Update moves an older launcher's content into it.
 
