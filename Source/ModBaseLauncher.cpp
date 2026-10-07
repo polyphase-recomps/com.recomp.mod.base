@@ -109,6 +109,14 @@ bool Recomp_LoadMods(const std::string& gamePackage)
 // ---- tokens and commands --------------------------------------------------------------------
 bool RecompLauncher_Token(const std::string& name, std::string& out)
 {
+    if (name == "version" || name == "project")
+    {
+        const EngineConfig* config = GetEngineConfig();
+        out = config == nullptr ? std::string(" ")
+              : name == "version" ? std::to_string(config->mVersion)
+                                  : (config->mProjectName.empty() ? std::string(" ") : config->mProjectName);
+        return true;
+    }
     RecompLauncher* node = RecompLauncher::Find();
     RecompGameLauncher* game = node != nullptr ? node->Game() : Recomp_FindLauncher();
     if (game == nullptr)
@@ -227,7 +235,11 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     const std::string title = !l.mTitle.empty() ? l.mTitle : (!map.mTitle.empty() ? map.mTitle : std::string("Game"));
     StyleText(root, "Title", header, s.mTitleSize * 1.4f, s.mTitleColor, &title);
     StyleText(root, "Subtitle", body, s.mLabelSize, s.mInfoColor, &l.mSubtitle);
-    if (Node* sub = root->FindChild("Subtitle", true)) sub->SetVisible(!l.mSubtitle.empty());
+    if (Node* sub = root->FindChild("Subtitle", true))
+    {
+        sub->SetVisible(!l.mSubtitle.empty());
+        if (Widget* w = sub->As<Widget>()) w->SetHeight(l.mSubtitle.empty() ? 0.0f : 22.0f);
+    }
     // the ROM and message lines fill in as the launcher runs; until then (the editor) they show
     // what a first start says, not their tokens
     RecompGameLauncher* game = Recomp_FindLauncher(map.mGame.empty() ? nullptr : map.mGame.c_str());
@@ -274,6 +286,65 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             q->SetVisible(logo != nullptr);
         }
     }
+    // the footer: bottom left its line and the logo right after it, bottom right the version
+    {
+        const float margin = 12.0f;
+        const float lineH = std::max(s.mNoteSize + 6.0f, 18.0f);
+        float textW = 0.0f;
+        if (Node* node = root->FindChild("FooterText", false))
+        {
+            if (Text* t = node->As<Text>())
+            {
+                t->SetFont(body);
+                t->SetTextSize(s.mNoteSize);
+                t->SetColor(s.mInfoColor);
+                t->SetText(l.mFooterText);
+                // its width as drawn, back in layout pixels (the editor scales its preview)
+                const float scale = t->GetAbsoluteScale().x > 0.0f ? t->GetAbsoluteScale().x : 1.0f;
+                textW = t->GetTextWidth() / scale;
+                if (textW <= 0.0f) textW = float(l.mFooterText.size()) * s.mNoteSize * 0.55f;
+                if (l.mFooterText.empty()) textW = 0.0f;
+                t->SetAnchorMode(AnchorMode::BottomLeft);
+                t->SetPosition(margin, -(lineH + margin));
+                t->SetDimensions(textW + 4.0f, lineH);
+                t->SetVisible(l.mShowFooter && !l.mFooterText.empty());
+            }
+        }
+        if (Node* node = root->FindChild("FooterLogo", false))
+        {
+            if (Quad* q = node->As<Quad>())
+            {
+                Texture* logo = l.mFooterLogo.Get<Texture>();
+                q->SetTexture(logo);
+                q->SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+                q->SetObjectFit(ObjectFit::Contain);
+                q->SetAnchorMode(AnchorMode::BottomLeft);
+                const float gap = textW > 0.0f ? 6.0f : 0.0f;
+                // its middle on the text's
+                q->SetPosition(margin + textW + gap, -(margin + lineH * 0.5f + l.mFooterLogoSize.y * 0.5f));
+                q->SetDimensions(l.mFooterLogoSize.x, l.mFooterLogoSize.y);
+                q->SetVisible(l.mShowFooter && logo != nullptr);
+            }
+        }
+        if (Node* node = root->FindChild("FooterVersion", false))
+        {
+            if (RecompText* t = node->As<RecompText>())
+            {
+                const float w = 320.0f;
+                t->SetFont(body);
+                t->SetTextSize(s.mNoteSize);
+                t->SetColor(s.mInfoColor);
+                t->SetFormat(l.mVersionFormat);
+                t->SetText(RecompFormat(l.mVersionFormat));
+                t->SetHorizontalJustification(Justification::Right);
+                t->SetAnchorMode(AnchorMode::BottomRight);
+                t->SetPosition(-(w + margin), -(lineH + margin));
+                t->SetDimensions(w, lineH);
+                t->SetVisible(l.mShowFooter && !l.mVersionFormat.empty());
+            }
+        }
+    }
+
     LabelButton(root, "Play", l.mPlayLabel, true);
     LabelButton(root, "Browse", l.mBrowseLabel, true);
     LabelButton(root, "Forget", l.mForgetLabel, l.mShowForget);
@@ -320,6 +391,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             launcher->SetGameScene(l.mGameScene);
             launcher->SetAutoStart(l.mAutoStart);
             launcher->SetSounds(l.mSoundStart, l.mSoundQuit, l.mMusic, l.mMusicVolume);
+            launcher->SetMoreSounds(l.mSoundDeny, l.mSoundForget);
         }
         else if (RecompMenuController* controller = child->As<RecompMenuController>())
         {
@@ -494,6 +566,12 @@ void RecompLauncher::Tick(float deltaTime)
 #endif
 }
 
+void RecompLauncher::SetMoreSounds(const AssetRef& deny, const AssetRef& forget)
+{
+    mSoundDeny = deny;
+    mSoundForget = forget;
+}
+
 void RecompLauncher::SetSounds(const AssetRef& start, const AssetRef& quit, const AssetRef& music, float musicVolume)
 {
     mSoundStart = start;
@@ -504,13 +582,14 @@ void RecompLauncher::SetSounds(const AssetRef& start, const AssetRef& quit, cons
 
 namespace
 {
-// a launcher sound at its menu's effects volume (the menu's Select sound when it has none)
-float PlayLauncherSound(RecompLauncher* launcher, SoundWave* wave)
+// a launcher sound at its menu's effects volume (the menu's Select sound when it has none,
+// unless `selectIfNone` is off)
+float PlayLauncherSound(RecompLauncher* launcher, SoundWave* wave, bool selectIfNone = true)
 {
     RecompMenuController* menu = RecompMenuController::FindFor(launcher);
     if (wave == nullptr)
     {
-        if (menu != nullptr) menu->PlaySound(RecompMenuController::Sound::Select);
+        if (menu != nullptr && selectIfNone) menu->PlaySound(RecompMenuController::Sound::Select);
         return 0.0f;
     }
     if (menu != nullptr) menu->PlaySoundWave(wave);
@@ -524,11 +603,13 @@ void RecompLauncher::Play()
     RecompGameLauncher* game = Game();
     if (game == nullptr)
     {
+        PlayLauncherSound(this, mSoundDeny.Get<SoundWave>(), false);
         DescribeRom();
         return;
     }
     if (!IsReady())
     {
+        PlayLauncherSound(this, mSoundDeny.Get<SoundWave>(), false);
         SetMessage("Choose your ROM of " + game->GameTitle() + " first");
         return;
     }
@@ -558,6 +639,7 @@ void RecompLauncher::StartNow()
     SetMessage(message);
     if (!ok)
     {
+        PlayLauncherSound(this, mSoundDeny.Get<SoundWave>(), false);
         EmitSignal("GameStartFailed", {this, message});
         CallFunction("OnGameStartFailed", {this, message});
         return;
@@ -593,6 +675,7 @@ void RecompLauncher::Browse()
     }
     std::string message;
     const bool ok = game->SetRomLocation(path, message);
+    if (!ok) PlayLauncherSound(this, mSoundDeny.Get<SoundWave>(), false);
     SetMessage(message);
     EmitSignal("RomChosen", {this, path, ok});
     CallFunction("OnRomChosen", {this, path, ok});
@@ -600,6 +683,7 @@ void RecompLauncher::Browse()
 
 void RecompLauncher::ForgetRom()
 {
+    PlayLauncherSound(this, mSoundForget.Get<SoundWave>());
     if (RecompGameLauncher* game = Game())
     {
         game->ClearRomLocation();
@@ -668,5 +752,9 @@ void RecompLauncher::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Asset, "Music", this, &mMusic, 1, nullptr,
                                 int32_t(SoundWave::GetStaticType())));
     outProps.push_back(Property(DatumType::Float, "Music Volume", this, &mMusicVolume));
+    outProps.push_back(Property(DatumType::Asset, "Deny Sound", this, &mSoundDeny, 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
+    outProps.push_back(Property(DatumType::Asset, "Forget Sound", this, &mSoundForget, 1, nullptr,
+                                int32_t(SoundWave::GetStaticType())));
     }
 }

@@ -697,6 +697,13 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
     RecompLauncher* launcher = b.Ensure<RecompLauncher>(root.Get(), "Launcher", [&](RecompLauncher* n) {
         Place(n, 0.0f, 0.0f, 0.0f, 0.0f);
     });
+    // the footer, over the panel (ModLauncher_ApplyLook places and fills it)
+    b.Ensure<Text>(root.Get(), "FooterText", [&](Text* t) { Place(t, 12.0f, -28.0f, 300.0f, 20.0f); });
+    b.Ensure<Quad>(root.Get(), "FooterLogo", [&](Quad* q) { Place(q, 318.0f, -28.0f, 72.0f, 20.0f); });
+    b.Ensure<RecompText>(root.Get(), "FooterVersion", [&](RecompText* t) {
+        Place(t, 0.0f, -28.0f, 260.0f, 20.0f);
+        t->SetFormat(l.mVersionFormat);
+    });
     std::string modsNote;
     if (launcher != nullptr)
     {

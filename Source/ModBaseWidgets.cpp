@@ -484,7 +484,7 @@ void RecompButton::Activate()
     if (RecompMenuController* controller = FindController(this))
     {
         if (mSetting == "@close") controller->PlaySound(RecompMenuController::Sound::Cancel);
-        else if (mSetting != "@launcher:play" && mSetting != "@launcher:quit")
+        else if (mSetting != "@launcher:play" && mSetting != "@launcher:quit" && mSetting != "@launcher:forget")
             controller->PlaySound(RecompMenuController::Sound::Select);
     }
     if (!mSetting.empty())

@@ -151,6 +151,14 @@ struct ModLauncherSettings
     AssetRef mSoundStart;                                 // Play (the game starts once it has played)
     AssetRef mSoundQuit;                                  // Quit (a packaged game closes once it has played)
     AssetRef mMusic;                                      // loops while the launcher is up
+    AssetRef mSoundDeny;                                  // Play without a ROM, a ROM refused, a failed start
+    AssetRef mSoundForget;                                // Forget ROM
+    // the footer: bottom left a line and a logo after it, bottom right the app's version
+    bool mShowFooter = true;
+    std::string mFooterText = "Compiled with the Polyphase Engine";
+    AssetRef mFooterLogo;                                 // after the text (none = no logo)
+    glm::vec2 mFooterLogoSize = {72.0f, 20.0f};
+    std::string mVersionFormat = "Version {@launcher.version}"; // "" = no version
     float mMusicVolume = 0.7f;
 };
 

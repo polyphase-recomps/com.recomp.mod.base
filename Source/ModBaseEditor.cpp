@@ -1535,11 +1535,36 @@ void DrawLauncher(void*)
         {
             ImGui::SetTooltip("Quit: a packaged game closes once it has played (1.5 s at most).");
         }
+        changed |= AssetPicker("Deny##lsnd", l.mSoundDeny, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Play with no ROM set, a ROM that is refused (another game or revision),\n"
+                              "or a start that fails. None = silent.");
+        }
+        changed |= AssetPicker("Forget ROM##lsnd", l.mSoundForget, SoundWave::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Forget ROM. None = the menu style's Select sound.");
         changed |= AssetPicker("Music##lsnd", l.mMusic, SoundWave::GetStaticType());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Loops while the launcher is up; stops when the game starts.");
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::SliderFloat("Music volume##lsnd", &l.mMusicVolume, 0.0f, 1.0f, "%.2f");
         ImGui::TextDisabled("Moving, selecting and going back use the Menu Style's sounds.");
+    }
+    if (ImGui::CollapsingHeader("Footer", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        changed |= ImGui::Checkbox("Show footer", &l.mShowFooter);
+        if (!l.mShowFooter) ImGui::BeginDisabled();
+        changed |= InputLabel("Footer text", l.mFooterText);
+        changed |= AssetPicker("Footer logo", l.mFooterLogo, Texture::GetStaticType());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("After the footer text, bottom left (e.g. the Polyphase logo).");
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat2("Footer logo size", &l.mFooterLogoSize.x, 1.0f, 4.0f, 1024.0f, "%.0f px");
+        changed |= InputLabel("Version", l.mVersionFormat);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Bottom right. {@launcher.version} = the app's Version (App Settings),\n"
+                              "{@launcher.project} = its name. Empty = no version line.");
+        }
+        if (!l.mShowFooter) ImGui::EndDisabled();
     }
     if (ImGui::CollapsingHeader("Starting the game", ImGuiTreeNodeFlags_DefaultOpen))
     {

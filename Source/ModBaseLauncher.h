@@ -120,6 +120,8 @@ public:
     void SetAutoStart(bool autoStart);
     // Play's and Quit's sounds, the music while the launcher is up, its volume.
     void SetSounds(const AssetRef& start, const AssetRef& quit, const AssetRef& music, float musicVolume);
+    // Deny (Play without a ROM, a ROM refused, a failed start) and Forget ROM's sounds.
+    void SetMoreSounds(const AssetRef& deny, const AssetRef& forget);
 
     // The launcher of a UI (in `from`'s tree), else the first one running.
     static RecompLauncher* Find(Node* from = nullptr);
@@ -143,6 +145,8 @@ protected:
     AssetRef mSoundStart;
     AssetRef mSoundQuit;
     AssetRef mMusic;
+    AssetRef mSoundDeny;
+    AssetRef mSoundForget;
     float mMusicVolume = 0.7f;
     bool mMusicStarted = false;
     bool mSetUp = false;

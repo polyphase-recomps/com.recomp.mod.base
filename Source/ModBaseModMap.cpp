@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 6;
+constexpr uint32_t kModMapVersion = 8;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -140,6 +140,38 @@ void WriteLogo6(Stream& stream, const ModLauncherSettings& l)
     stream.WriteVec2(l.mLogoUvScale);
     stream.WriteVec2(l.mLogoUvOffset);
     stream.WriteUint8(l.mLogoFit);
+}
+
+// version 7: the launcher's deny and forget sounds
+void ReadSounds7(Stream& stream, ModLauncherSettings& l)
+{
+    stream.ReadAsset(l.mSoundDeny);
+    stream.ReadAsset(l.mSoundForget);
+}
+
+void WriteSounds7(Stream& stream, const ModLauncherSettings& l)
+{
+    stream.WriteAsset(l.mSoundDeny);
+    stream.WriteAsset(l.mSoundForget);
+}
+
+// version 8: the launcher's footer
+void ReadFooter8(Stream& stream, ModLauncherSettings& l)
+{
+    l.mShowFooter = stream.ReadUint8() != 0;
+    stream.ReadString(l.mFooterText);
+    stream.ReadAsset(l.mFooterLogo);
+    l.mFooterLogoSize = stream.ReadVec2();
+    stream.ReadString(l.mVersionFormat);
+}
+
+void WriteFooter8(Stream& stream, const ModLauncherSettings& l)
+{
+    stream.WriteUint8(l.mShowFooter ? 1 : 0);
+    stream.WriteString(l.mFooterText);
+    stream.WriteAsset(l.mFooterLogo);
+    stream.WriteVec2(l.mFooterLogoSize);
+    stream.WriteString(l.mVersionFormat);
 }
 
 void ReadLauncher(Stream& stream, ModLauncherSettings& l)
@@ -277,6 +309,14 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadLogo6(stream, mLauncher);
     }
+    if (version >= 7)
+    {
+        ReadSounds7(stream, mLauncher);
+    }
+    if (version >= 8)
+    {
+        ReadFooter8(stream, mLauncher);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -330,6 +370,8 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     WriteLook4(stream, mStyle, mLauncher);
     WriteSounds5(stream, mStyle, mLauncher);
     WriteLogo6(stream, mLauncher);
+    WriteSounds7(stream, mLauncher);
+    WriteFooter8(stream, mLauncher);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)
