@@ -160,6 +160,7 @@ struct ModLauncherSettings
     glm::vec2 mFooterLogoSize = {40.0f, 10.0f};
     std::string mVersionFormat = "Version {@launcher.version}"; // "" = no version
     float mFooterTextSize = 5.0f;
+    bool mCenterContent = true;                           // the content in the middle of a taller screen
     float mMusicVolume = 0.7f;
 };
 

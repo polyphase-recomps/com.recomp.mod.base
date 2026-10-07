@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 9;
+constexpr uint32_t kModMapVersion = 10;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -321,6 +321,10 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         mLauncher.mFooterTextSize = stream.ReadFloat();
     }
+    if (version >= 10)
+    {
+        mLauncher.mCenterContent = stream.ReadUint8() != 0;
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -377,6 +381,7 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     WriteSounds7(stream, mLauncher);
     WriteFooter8(stream, mLauncher);
     stream.WriteFloat(mLauncher.mFooterTextSize); // version 9
+    stream.WriteUint8(mLauncher.mCenterContent ? 1 : 0); // version 10
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)

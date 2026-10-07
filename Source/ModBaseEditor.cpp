@@ -1497,6 +1497,12 @@ void DrawLauncher(void*)
     }
     if (ImGui::CollapsingHeader("Panel and buttons", ImGuiTreeNodeFlags_DefaultOpen))
     {
+        changed |= ImGui::Checkbox("Centre vertically", &l.mCenterContent);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("The logo, title and buttons in the middle of a screen taller than them\n"
+                              "(off: at the top). A shorter screen scrolls them either way.");
+        }
         changed |= ImGui::Checkbox("Full screen", &l.mPanelFullScreen);
         if (ImGui::IsItemHovered())
         {

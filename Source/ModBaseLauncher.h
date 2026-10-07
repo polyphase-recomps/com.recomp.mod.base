@@ -99,6 +99,7 @@ public:
     virtual void Stop() override;
     virtual void Destroy() override;
     virtual void Tick(float deltaTime) override;
+    virtual void EditorTick(float deltaTime) override;
     virtual void GatherProperties(std::vector<Property>& outProps) override;
 
     void Play();
@@ -122,6 +123,8 @@ public:
     void SetSounds(const AssetRef& start, const AssetRef& quit, const AssetRef& music, float musicVolume);
     // Deny (Play without a ROM, a ROM refused, a failed start) and Forget ROM's sounds.
     void SetMoreSounds(const AssetRef& deny, const AssetRef& forget);
+    // The content (Panel/.../Scroll/Layout) in the middle of a scroll view taller than it.
+    void SetCenterContent(bool center);
 
     // The launcher of a UI (in `from`'s tree), else the first one running.
     static RecompLauncher* Find(Node* from = nullptr);
@@ -149,6 +152,8 @@ protected:
     AssetRef mSoundForget;
     float mMusicVolume = 0.7f;
     bool mMusicStarted = false;
+    bool mCenterContent = true;
+    void CenterContent();
     bool mSetUp = false;
     bool mFailed = false;
 };

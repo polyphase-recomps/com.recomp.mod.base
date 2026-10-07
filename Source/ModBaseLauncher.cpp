@@ -27,6 +27,7 @@
 #include "World.h"
 
 #include <algorithm>
+#include <cmath>
 
 FORCE_LINK_DEF(RecompLauncher);
 DEFINE_NODE(RecompLauncher, Widget);
@@ -426,6 +427,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             launcher->SetAutoStart(l.mAutoStart);
             launcher->SetSounds(l.mSoundStart, l.mSoundQuit, l.mMusic, l.mMusicVolume);
             launcher->SetMoreSounds(l.mSoundDeny, l.mSoundForget);
+            launcher->SetCenterContent(l.mCenterContent);
         }
         else if (RecompMenuController* controller = child->As<RecompMenuController>())
         {
@@ -581,6 +583,7 @@ void RecompLauncher::Tick(float deltaTime)
         }
     }
     RecompSound::Follow(this);
+    CenterContent();
     // Play shows "Starting..." for a frame first (the start may take a moment), and lets its
     // sound play out: the game scene replaces this one, sounds and all
     if (mStartCountdown > 0)
@@ -598,6 +601,55 @@ void RecompLauncher::Tick(float deltaTime)
         GetEngineState()->mQuit = true;
     }
 #endif
+}
+
+void RecompLauncher::SetCenterContent(bool center)
+{
+    mCenterContent = center;
+}
+
+void RecompLauncher::EditorTick(float deltaTime)
+{
+    Widget::EditorTick(deltaTime);
+    CenterContent(); // the editor's preview as the game shows it
+}
+
+// The launcher's content column (a scroll view's content) has a top padding of kLayoutPadding;
+// where the view is taller than the content, the padding grows by half of what is spare, which
+// puts the content in the middle. Shorter, it is back to kLayoutPadding and the view scrolls.
+void RecompLauncher::CenterContent()
+{
+    constexpr float kLayoutPadding = 16.0f;
+    Node* root = GetParent();
+    Node* node = root != nullptr ? root->FindChild("Layout", true) : nullptr;
+    Widget* layout = node != nullptr ? node->As<Widget>() : nullptr;
+    ScrollContainer* view = layout != nullptr && layout->GetParent() != nullptr
+                                ? layout->GetParent()->As<ScrollContainer>() : nullptr;
+    if (view == nullptr)
+    {
+        return;
+    }
+    const glm::vec2 scale = view->GetAbsoluteScale();
+    const float viewH = scale.y > 0.0f ? view->GetRect().mHeight / scale.y : 0.0f;
+    if (viewH <= 0.0f)
+    {
+        return;
+    }
+    const float padTop = FloatProperty(layout, "Padding Top", kLayoutPadding);
+    const float extraNow = std::max(0.0f, padTop - kLayoutPadding);
+    const float contentH = layout->GetHeight() - extraNow; // the column without the centring
+    const float extra = mCenterContent ? std::floor(std::max(0.0f, (viewH - contentH) * 0.5f)) : 0.0f;
+    if (std::fabs(extra - extraNow) < 0.5f)
+    {
+        return;
+    }
+    std::vector<Property> props;
+    layout->GatherProperties(props);
+    for (Property& p : props)
+    {
+        if (p.mName == "Padding Top" && p.GetType() == DatumType::Float) p.SetFloat(kLayoutPadding + extra);
+    }
+    layout->SetHeight(contentH + extra);
 }
 
 void RecompLauncher::SetMoreSounds(const AssetRef& deny, const AssetRef& forget)
@@ -777,6 +829,7 @@ void RecompLauncher::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Asset, "Mods Scene", this, &mModsScene, 1, nullptr, int32_t(Scene::GetStaticType())));
     outProps.push_back(Property(DatumType::Bool, "Auto Start", this, &mAutoStart));
     outProps.push_back(Property(DatumType::Bool, "Load Mods", this, &mLoadMods));
+    outProps.push_back(Property(DatumType::Bool, "Center Content", this, &mCenterContent));
     {
     SCOPED_CATEGORY("Recomp Launcher Sounds");
     outProps.push_back(Property(DatumType::Asset, "Start Sound", this, &mSoundStart, 1, nullptr,
