@@ -210,6 +210,20 @@ float FitColumn(Widget* column)
     return total;
 }
 
+// An ArrayWidget's padding: left and right `x`, top and bottom `y` (properties: ArrayWidget isn't
+// exported to addons).
+void SetPadding(Widget* array, float x, float y)
+{
+    std::vector<Property> props;
+    array->GatherProperties(props);
+    for (Property& p : props)
+    {
+        if (p.GetType() != DatumType::Float) continue;
+        if (p.mName == "Padding Left" || p.mName == "Padding Right") p.SetFloat(x);
+        else if (p.mName == "Padding Top" || p.mName == "Padding Bottom") p.SetFloat(y);
+    }
+}
+
 void LabelButton(Node* root, const char* name, const std::string& label, bool shown)
 {
     Node* node = root->FindChild(name, true);
@@ -286,61 +300,81 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             q->SetVisible(logo != nullptr);
         }
     }
-    // the footer: bottom left its line and the logo right after it, bottom right the version
+    // the footer (Panel/Body/Footer, under the scrolling content): bottom left its line with the
+    // logo right after it (FooterLeft, a row), a spacer, bottom right the version
+    if (Node* footerNode = root->FindChild("Footer", true))
     {
+        Widget* footer = footerNode->As<Widget>();
         const float margin = 12.0f;
-        const float lineH = std::max(s.mNoteSize + 6.0f, 18.0f);
+        const float textSize = l.mFooterTextSize > 0.0f ? l.mFooterTextSize : 10.0f;
+        const float lineH = textSize + 6.0f;
+        Texture* logo = l.mFooterLogo.Get<Texture>();
+        const bool hasText = !l.mFooterText.empty();
+        const bool hasLogo = logo != nullptr;
+        const bool hasVersion = !l.mVersionFormat.empty();
+        const bool shown = l.mShowFooter && (hasText || hasLogo || hasVersion);
+        const float rowH = shown ? std::max(lineH, hasLogo ? l.mFooterLogoSize.y : 0.0f) + 2.0f * 6.0f : 0.0f;
+        if (footer != nullptr)
+        {
+            footer->SetVisible(shown);
+            footer->SetHeight(rowH);
+            SetPadding(footer, margin, 0.0f);
+        }
         float textW = 0.0f;
-        if (Node* node = root->FindChild("FooterText", false))
+        if (Node* node = footerNode->FindChild("FooterText", true))
         {
             if (Text* t = node->As<Text>())
             {
                 t->SetFont(body);
-                t->SetTextSize(s.mNoteSize);
+                t->SetTextSize(textSize);
                 t->SetColor(s.mInfoColor);
                 t->SetText(l.mFooterText);
+                t->SetVerticalJustification(Justification::Center);
                 // its width as drawn, back in layout pixels (the editor scales its preview)
                 const float scale = t->GetAbsoluteScale().x > 0.0f ? t->GetAbsoluteScale().x : 1.0f;
-                textW = t->GetTextWidth() / scale;
-                if (textW <= 0.0f) textW = float(l.mFooterText.size()) * s.mNoteSize * 0.55f;
-                if (l.mFooterText.empty()) textW = 0.0f;
-                t->SetAnchorMode(AnchorMode::BottomLeft);
-                t->SetPosition(margin, -(lineH + margin));
-                t->SetDimensions(textW + 4.0f, lineH);
-                t->SetVisible(l.mShowFooter && !l.mFooterText.empty());
+                textW = hasText ? t->GetTextWidth() / scale : 0.0f;
+                if (hasText && textW <= 0.0f) textW = float(l.mFooterText.size()) * textSize * 0.55f;
+                if (hasText) textW += 2.0f;
+                t->SetAnchorMode(AnchorMode::TopLeft);
+                t->SetDimensions(textW, lineH);
+                t->SetVisible(hasText);
             }
         }
-        if (Node* node = root->FindChild("FooterLogo", false))
+        if (Node* node = footerNode->FindChild("FooterLogo", true))
         {
             if (Quad* q = node->As<Quad>())
             {
-                Texture* logo = l.mFooterLogo.Get<Texture>();
                 q->SetTexture(logo);
                 q->SetColor({1.0f, 1.0f, 1.0f, 1.0f});
                 q->SetObjectFit(ObjectFit::Contain);
-                q->SetAnchorMode(AnchorMode::BottomLeft);
-                const float gap = textW > 0.0f ? 6.0f : 0.0f;
-                // its middle on the text's
-                q->SetPosition(margin + textW + gap, -(margin + lineH * 0.5f + l.mFooterLogoSize.y * 0.5f));
-                q->SetDimensions(l.mFooterLogoSize.x, l.mFooterLogoSize.y);
-                q->SetVisible(l.mShowFooter && logo != nullptr);
+                q->SetAnchorMode(AnchorMode::TopLeft);
+                q->SetDimensions(hasLogo ? l.mFooterLogoSize.x : 0.0f, hasLogo ? l.mFooterLogoSize.y : 0.0f);
+                q->SetVisible(hasLogo);
             }
         }
-        if (Node* node = root->FindChild("FooterVersion", false))
+        if (Node* node = footerNode->FindChild("FooterLeft", true))
+        {
+            if (Widget* left = node->As<Widget>())
+            {
+                const float logoW = hasLogo ? l.mFooterLogoSize.x : 0.0f;
+                left->SetAnchorMode(AnchorMode::TopLeft);
+                left->SetDimensions(textW + (hasText && hasLogo ? 6.0f : 0.0f) + logoW, rowH);
+            }
+        }
+        if (Node* node = footerNode->FindChild("FooterVersion", true))
         {
             if (RecompText* t = node->As<RecompText>())
             {
-                const float w = 320.0f;
                 t->SetFont(body);
-                t->SetTextSize(s.mNoteSize);
+                t->SetTextSize(textSize);
                 t->SetColor(s.mInfoColor);
                 t->SetFormat(l.mVersionFormat);
                 t->SetText(RecompFormat(l.mVersionFormat));
                 t->SetHorizontalJustification(Justification::Right);
-                t->SetAnchorMode(AnchorMode::BottomRight);
-                t->SetPosition(-(w + margin), -(lineH + margin));
-                t->SetDimensions(w, lineH);
-                t->SetVisible(l.mShowFooter && !l.mVersionFormat.empty());
+                t->SetVerticalJustification(Justification::Center);
+                t->SetAnchorMode(AnchorMode::TopLeft);
+                t->SetDimensions(hasVersion ? 240.0f : 0.0f, lineH);
+                t->SetVisible(hasVersion);
             }
         }
     }

@@ -1554,6 +1554,8 @@ void DrawLauncher(void*)
         changed |= ImGui::Checkbox("Show footer", &l.mShowFooter);
         if (!l.mShowFooter) ImGui::BeginDisabled();
         changed |= InputLabel("Footer text", l.mFooterText);
+        ImGui::SetNextItemWidth(120.0f);
+        changed |= ImGui::DragFloat("Footer text size", &l.mFooterTextSize, 0.25f, 6.0f, 48.0f, "%.1f px");
         changed |= AssetPicker("Footer logo", l.mFooterLogo, Texture::GetStaticType());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("After the footer text, bottom left (e.g. the Polyphase logo).");
         ImGui::SetNextItemWidth(160.0f);

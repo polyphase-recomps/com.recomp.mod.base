@@ -641,11 +641,23 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
         outMessage = "Panel exists but is not a Quad: left as it is.";
         return false;
     }
+    // the panel's content: what scrolls, and under it the footer
+    Widget* body = Array(b, panel, "Body", false, 0.0f, 0.0f, Filled());
+    if (body == nullptr)
+    {
+        outMessage = "Panel/Body exists but is not an ArrayWidget (or the engine has none): left as it is.";
+        return false;
+    }
+    if (Node* old = panel->FindChild("Scroll", false))
+    {
+        // a launcher made before the footer: its content moves into the column
+        old->Attach(body);
+    }
     // the content scrolls when the window is too short for it (ModLauncher_ApplyLook sizes it)
-    ScrollContainer* scroll = Scroll(b, panel, "Scroll", false, Filled());
+    ScrollContainer* scroll = Scroll(b, body, "Scroll", false, [](Widget* w) { FillRest(w); });
     if (scroll == nullptr)
     {
-        outMessage = "Panel/Scroll exists but is not a ScrollContainer: left as it is.";
+        outMessage = "Panel/Body/Scroll exists but is not a ScrollContainer: left as it is.";
         return false;
     }
     if (Node* old = panel->FindChild("Layout", false))
@@ -697,11 +709,27 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
     RecompLauncher* launcher = b.Ensure<RecompLauncher>(root.Get(), "Launcher", [&](RecompLauncher* n) {
         Place(n, 0.0f, 0.0f, 0.0f, 0.0f);
     });
-    // the footer, over the panel (ModLauncher_ApplyLook places and fills it)
-    b.Ensure<Text>(root.Get(), "FooterText", [&](Text* t) { Place(t, 12.0f, -28.0f, 300.0f, 20.0f); });
-    b.Ensure<Quad>(root.Get(), "FooterLogo", [&](Quad* q) { Place(q, 318.0f, -28.0f, 72.0f, 20.0f); });
-    b.Ensure<RecompText>(root.Get(), "FooterVersion", [&](RecompText* t) {
-        Place(t, 0.0f, -28.0f, 260.0f, 20.0f);
+    // the footer, under the content: bottom left its line with the logo after it, bottom right
+    // the version (ModLauncher_ApplyLook sizes and fills it)
+    Widget* footer = Array(b, body, "Footer", true, 0.0f, 0.0f, FullWidth(32.0f), true);
+    Widget* footerLeft = Array(b, footer, "FooterLeft", true, 6.0f, 0.0f, At(0.0f, 0.0f, 300.0f, 32.0f), true);
+    // (a launcher made before: the footer's nodes were on the root)
+    for (const char* name : {"FooterText", "FooterLogo"})
+    {
+        if (Node* old = root->FindChild(name, false))
+        {
+            if (footerLeft != nullptr) old->Attach(footerLeft);
+        }
+    }
+    b.Ensure<Text>(footerLeft, "FooterText", [&](Text* t) { Place(t, 0.0f, 0.0f, 220.0f, 16.0f); });
+    b.Ensure<Quad>(footerLeft, "FooterLogo", [&](Quad* q) { Place(q, 0.0f, 0.0f, 72.0f, 20.0f); });
+    b.Ensure<Widget>(footer, "FooterSpace", [&](Widget* w) { FillRest(w); });
+    if (Node* old = root->FindChild("FooterVersion", false))
+    {
+        if (footer != nullptr) old->Attach(footer);
+    }
+    b.Ensure<RecompText>(footer, "FooterVersion", [&](RecompText* t) {
+        Place(t, 0.0f, 0.0f, 240.0f, 16.0f);
         t->SetFormat(l.mVersionFormat);
     });
     std::string modsNote;

@@ -159,6 +159,7 @@ struct ModLauncherSettings
     AssetRef mFooterLogo;                                 // after the text (none = no logo)
     glm::vec2 mFooterLogoSize = {72.0f, 20.0f};
     std::string mVersionFormat = "Version {@launcher.version}"; // "" = no version
+    float mFooterTextSize = 10.0f;
     float mMusicVolume = 0.7f;
 };
 
