@@ -7,6 +7,7 @@
 
 #if EDITOR
 
+#include "ModBaseDisplay.h"
 #include "ModBaseLauncher.h"
 #include "ModBaseModMap.h"
 #include "ModBaseSettings.h"
@@ -19,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 
 namespace
 {
@@ -236,8 +238,12 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     if (options.includeDisplay)
     {
         std::vector<const ModEntry*> display;
-        for (const char* id : {"display.mode", "display.scale", "display.filter", "display.window"})
+        for (const char* id : {"display.mode", "display.scale", "display.filter", "display.resolution", "display.window"})
         {
+            if (std::strcmp(id, "display.resolution") == 0 && Recomp_MaxResolution() <= 1)
+            {
+                continue; // no runtime here can draw larger
+            }
             if (map->Find(id) == nullptr)
             {
                 if (const ModEntry* e = ModSettings::Get().FindEntry(id))

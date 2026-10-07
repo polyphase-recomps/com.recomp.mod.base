@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -1018,8 +1019,12 @@ void DrawLiveVariables(void*)
 void DrawDisplaySettings(void*)
 {
     ModSettings& settings = ModSettings::Get();
-    for (const char* id : {"display.mode", "display.scale", "display.filter", "display.window"})
+    for (const char* id : {"display.mode", "display.scale", "display.filter", "display.resolution", "display.window"})
     {
+        if (std::strcmp(id, "display.resolution") == 0 && Recomp_MaxResolution() <= 1)
+        {
+            continue; // no runtime here can draw larger
+        }
         const ModEntry* e = settings.FindEntry(id);
         if (e == nullptr) continue;
         float value = 0.0f;

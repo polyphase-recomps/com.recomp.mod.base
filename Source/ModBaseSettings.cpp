@@ -81,6 +81,7 @@ float DisplayGet(const std::string& id)
     if (id == "display.scale") return (float)d.scale;
     if (id == "display.filter") return (float)d.filter;
     if (id == "display.window") return (float)d.window;
+    if (id == "display.resolution") return (float)d.resolution;
     return 0.0f;
 }
 
@@ -92,6 +93,7 @@ void DisplaySet(const std::string& id, float value)
     else if (id == "display.scale") d.scale = std::max(1, std::min(v, 8));
     else if (id == "display.filter") d.filter = std::max(0, std::min(v, 2));
     else if (id == "display.window") d.window = std::max(0, v);
+    else if (id == "display.resolution") d.resolution = std::max(1, std::min(v, 4));
 }
 
 bool IsDisplayId(const std::string& id)
@@ -127,6 +129,12 @@ ModSettings::ModSettings()
     scale.mDefault = 2.0f;
     mBuiltins.push_back(scale);
     mBuiltins.push_back(MakeChoice("display.filter", "Filter", {"Auto", "Sharp", "Smooth"}, 0.0f));
+    // the game drawn at N x its own size (runtimes that can; see Recomp_SetMaxResolution)
+    ModEntry resolution = MakeChoice("display.resolution", "Resolution", {"Native", "2x", "3x", "4x"}, 1.0f);
+    resolution.mChoiceValues = {1.0f, 2.0f, 3.0f, 4.0f};
+    resolution.mMin = 1.0f;
+    resolution.mMax = 4.0f;
+    mBuiltins.push_back(resolution);
     std::vector<std::string> windows;
     for (const RecompWindowPreset& p : Recomp_WindowPresets())
     {

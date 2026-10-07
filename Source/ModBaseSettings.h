@@ -11,8 +11,9 @@
  *
  * Entries without a value picked by the user show the game's current value (variables,
  * addresses) or their default. The built-in display settings (resolution scaler) are
- * always available as "display.mode", "display.scale", "display.filter" and
- * "display.window", whether or not the map lists them.
+ * always available as "display.mode", "display.scale", "display.filter",
+ * "display.resolution" and "display.window", whether or not the map lists them
+ * ("display.resolution" is shown only when a runtime supports it: Recomp_MaxResolution()).
  *
  * Player nodes call ModSettings::Get().Tick(provider) every frame, and pass
  * StartupOptions(game) to the game when they start it.

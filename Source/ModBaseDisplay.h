@@ -53,7 +53,16 @@ struct RecompDisplaySettings
     int scale = 2;          // Scale mode: 2..6
     int filter = 0;         // 0 auto (the runtime's default), 1 sharp (nearest), 2 smooth (linear)
     int window = 0;         // Windows window preset, see Recomp_WindowPresets (0 = leave)
+    int resolution = 1;     // render resolution: the game drawn at N x its own size (1..4), by
+                            // runtimes that can (Recomp_SetMaxResolution); players clamp it
 };
+
+// "Resolution" (display.resolution) is offered by runtimes that can draw the game larger than
+// its own size: they call Recomp_SetMaxResolution(n) when they load (the settings scene and the
+// editor list it only when some runtime did).
+#define RECOMP_DISPLAY_HAS_RESOLUTION 1
+MODBASE_API void Recomp_SetMaxResolution(int maxScale);
+MODBASE_API int Recomp_MaxResolution(); // 1 until a runtime sets more
 
 struct RecompRect
 {

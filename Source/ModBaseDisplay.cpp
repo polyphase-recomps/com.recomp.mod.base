@@ -19,6 +19,25 @@ RecompDisplaySettings& Recomp_DisplaySettings()
     return sSettings;
 }
 
+namespace
+{
+int& MaxResolution()
+{
+    static int sMax = 1;
+    return sMax;
+}
+}
+
+void Recomp_SetMaxResolution(int maxScale)
+{
+    MaxResolution() = std::max(MaxResolution(), std::max(1, maxScale));
+}
+
+int Recomp_MaxResolution()
+{
+    return MaxResolution();
+}
+
 const char* Recomp_FitModeName(RecompFitMode mode)
 {
     switch (mode)
