@@ -632,15 +632,44 @@ bool ModLauncher_Generate(ModMap* map, const std::string& sceneNameIn, std::stri
 
     Builder b;
     b.Ensure<Quad>(root.Get(), "Background", [&](Quad* q) { Full(q); });
-    Quad* panel = b.Ensure<Quad>(root.Get(), "Panel", [&](Quad* q) {
-        Full(q);
-        q->SetColor(kPanelColor);
-    });
-    if (panel == nullptr)
+    // The panel is a container that draws nothing, its fill a Quad of its own under the content:
+    // a widget's alpha (its color's) multiplies into its children's, so a translucent (or no)
+    // fill on the content's parent would fade the content too.
+    if (Node* old = root->FindChild("Panel", false); old != nullptr && old->As<Quad>() != nullptr)
     {
-        outMessage = "Panel exists but is not a Quad: left as it is.";
+        // a launcher made before: its Panel Quad becomes the fill, its content moves to a new Panel
+        int32_t index = 0;
+        for (uint32_t i = 0; i < root->GetNumChildren(); ++i)
+        {
+            if (root->GetChild((int32_t)i) == old) index = (int32_t)i;
+        }
+        old->SetName("PanelBackground");
+        Widget* container = root->CreateChild<Widget>("Panel");
+        if (container != nullptr)
+        {
+            Full(container);
+            container->Attach(root.Get(), false, index);
+            while (old->GetNumChildren() > 0)
+            {
+                old->GetChild(0)->Attach(container);
+            }
+            old->Attach(container, false, 0);
+            if (Widget* fill = old->As<Widget>()) Full(fill);
+            ++b.added;
+        }
+    }
+    Widget* panel = b.Ensure<Widget>(root.Get(), "Panel", [&](Widget* w) { Full(w); });
+    if (panel == nullptr || panel->As<Quad>() != nullptr)
+    {
+        outMessage = "Panel exists but is not a plain widget: left as it is.";
         return false;
     }
+    // (first: drawn under the content)
+    b.Ensure<Quad>(panel, "PanelBackground", [&](Quad* q) {
+        Full(q);
+        q->SetColor(kPanelColor);
+        q->Attach(panel, false, 0);
+    });
     // the panel's content: what scrolls, and under it the footer
     Widget* body = Array(b, panel, "Body", false, 0.0f, 0.0f, Filled());
     if (body == nullptr)

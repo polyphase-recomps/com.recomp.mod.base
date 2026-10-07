@@ -1256,6 +1256,13 @@ void DrawMenuStyle(void*)
     ImGui::BeginChild("style", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.2f));
     if (ImGui::CollapsingHeader("Background", ImGuiTreeNodeFlags_DefaultOpen))
     {
+        changed |= ImGui::Checkbox("Panel background", &s.mPanelBackground);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Off: the panel draws no fill or texture; what is behind it shows (a 3D scene).\n"
+                              "Its content is unaffected either way.");
+        }
+        if (!s.mPanelBackground) ImGui::BeginDisabled();
         color(s.mPanelTexture.Get() != nullptr && !s.mTintPanel ? "Color (no texture)##panel" : "Tint##panel",
               s.mPanelColor);
         changed |= AssetPicker("Texture##panel", s.mPanelTexture, Texture::GetStaticType());
@@ -1263,6 +1270,7 @@ void DrawMenuStyle(void*)
         ImGui::TextDisabled("The panel behind the menu's content. With a texture the tint multiplies it;\n"
                             "untinted it shows as it is. The launcher's full-screen picture is set in\n"
                             "Tools > Recomp > Mods > Launcher (Pictures).");
+        if (!s.mPanelBackground) ImGui::EndDisabled();
     }
     if (ImGui::CollapsingHeader("Buttons", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -1484,6 +1492,12 @@ void DrawLauncher(void*)
     if (ImGui::CollapsingHeader("Pictures", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::TextDisabled("Logo (picture, size, crop, fit) and music: Menu Style > Launcher.");
+        changed |= ImGui::Checkbox("Show background", &l.mShowBackground);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("The full-screen picture / color behind the panel. Off (and Menu Style >\n"
+                              "Panel background off): the scene behind the launcher shows, e.g. a 3D one.");
+        }
         changed |= AssetPicker("Background", l.mBackground, Texture::GetStaticType());
         changed |= ImGui::Checkbox("Tint the picture", &l.mTintBackground);
         if (ImGui::IsItemHovered())

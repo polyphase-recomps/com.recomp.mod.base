@@ -760,8 +760,20 @@ void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
             StyleText(t, fonts.body, s.mLabelSize, (parent != nullptr && HasButton(parent)) ? s.mLabelColor : s.mInfoColor);
         else t->SetFont(fonts.body);
     }
+    else if (name == "PanelBackground")
+    {
+        // (a Quad of its own, under the content: its alpha doesn't fade the content)
+        if (Quad* q = node->As<Quad>())
+        {
+            Texture* texture = s.mPanelTexture.Get<Texture>();
+            q->SetColor(texture != nullptr && !s.mTintPanel ? glm::vec4(1.0f) : s.mPanelColor);
+            q->SetTexture(texture);
+            q->SetVisible(s.mPanelBackground);
+        }
+    }
     else if (name == "Panel")
     {
+        // an older menu: the panel is the content's parent and its fill at once
         if (Quad* q = node->As<Quad>())
         {
             Texture* texture = s.mPanelTexture.Get<Texture>();

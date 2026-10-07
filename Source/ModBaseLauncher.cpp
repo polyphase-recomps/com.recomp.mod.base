@@ -317,6 +317,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             // a picture untinted shows as it is; without one the color is the fill
             q->SetColor(picture != nullptr && !l.mTintBackground ? glm::vec4(1.0f) : l.mBackgroundColor);
             q->SetTexture(picture);
+            q->SetVisible(l.mShowBackground); // off: the scene behind shows (a 3D background)
         }
     }
     if (Node* node = root->FindChild("Panel", false))

@@ -83,6 +83,7 @@ struct ModStyle
     glm::vec4 mPanelColor = {0.04f, 0.05f, 0.08f, 0.88f}; // tint (with a texture) or fill
     AssetRef mPanelTexture;
     bool mTintPanel = true; // off: the panel's texture as it is
+    bool mPanelBackground = true; // off: no panel fill or texture (a 3D scene shows through)
     // buttons: per-state texture (empty = the Normal one, or none) and tint
     AssetRef mButtonTextures[StateCount];
     glm::vec4 mButtonColors[StateCount] = {
@@ -161,6 +162,7 @@ struct ModLauncherSettings
     std::string mVersionFormat = "Version {@launcher.version}"; // "" = no version
     float mFooterTextSize = 5.0f;
     bool mCenterContent = true;                           // the content in the middle of a taller screen
+    bool mShowBackground = true;                          // the full-screen picture / color behind the panel
     float mMusicVolume = 0.7f;
 };
 
