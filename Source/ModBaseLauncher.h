@@ -125,6 +125,8 @@ public:
     void SetMoreSounds(const AssetRef& deny, const AssetRef& forget);
     // The content (Panel/.../Scroll/Layout) in the middle of a scroll view taller than it.
     void SetCenterContent(bool center);
+    // Forget ROM at all (it shows only while a ROM is set).
+    void SetShowForget(bool show);
 
     // The launcher of a UI (in `from`'s tree), else the first one running.
     static RecompLauncher* Find(Node* from = nullptr);
@@ -154,6 +156,9 @@ protected:
     bool mMusicStarted = false;
     bool mCenterContent = true;
     void CenterContent();
+    bool mShowForget = false;
+    float mForgetCheck = 0.0f;
+    void UpdateForgetButton();
     bool mSetUp = false;
     bool mFailed = false;
 };

@@ -1521,6 +1521,7 @@ void DrawLauncher(void*)
         changed |= InputLabel("Forget ROM", l.mForgetLabel);
         ImGui::SameLine();
         changed |= ImGui::Checkbox("Show##forget", &l.mShowForget);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shown only while a ROM is set.");
         changed |= InputLabel("Mods", l.mModsLabel);
         ImGui::SameLine();
         changed |= ImGui::Checkbox("Show##mods", &l.mShowMods);

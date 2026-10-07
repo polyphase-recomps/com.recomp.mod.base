@@ -225,13 +225,56 @@ void SetPadding(Widget* array, float x, float y)
     }
 }
 
+constexpr float kLauncherButtonH = 34.0f; // as ModLauncher_Generate makes them
+
+// a hidden button takes no room (a column keeps a hidden child's place)
+void ShowButton(RecompButton* b, bool shown)
+{
+    b->SetVisible(shown);
+    b->SetHeight(shown ? kLauncherButtonH : 0.0f);
+}
+
 void LabelButton(Node* root, const char* name, const std::string& label, bool shown)
 {
     Node* node = root->FindChild(name, true);
     RecompButton* b = node != nullptr ? node->As<RecompButton>() : nullptr;
     if (b == nullptr) return;
     b->SetTextString(label);
-    b->SetVisible(shown);
+    ShowButton(b, shown);
+}
+
+// Up / down over the buttons that are shown (a hidden one would stop the gamepad), and the
+// content's height: the scroll view around it scrolls when the window is shorter, so the
+// buttons can always be reached.
+void RelayoutButtons(Node* root)
+{
+    std::vector<Button*> shown;
+    for (const char* name : {"Play", "Browse", "Forget", "Mods", "Quit"})
+    {
+        Node* node = root->FindChild(name, true);
+        RecompButton* b = node != nullptr ? node->As<RecompButton>() : nullptr;
+        if (b != nullptr && b->IsVisible()) shown.push_back(b);
+    }
+    for (size_t i = 0; i < shown.size(); ++i)
+    {
+        shown[i]->SetNavUp(i > 0 ? shown[i - 1] : nullptr);
+        shown[i]->SetNavDown(i + 1 < shown.size() ? shown[i + 1] : nullptr);
+    }
+    if (Node* node = root->FindChild("Buttons", true))
+    {
+        if (Widget* w = node->As<Widget>()) FitColumn(w);
+    }
+    if (Node* node = root->FindChild("Layout", true))
+    {
+        Widget* layout = node->As<Widget>();
+        if (layout != nullptr && node->GetParent() != nullptr && node->GetParent()->As<ScrollContainer>() != nullptr)
+        {
+            // top-left in the scroll view; its width follows the view (FitWidth)
+            layout->SetAnchorMode(AnchorMode::TopLeft);
+            layout->SetPosition(0.0f, 0.0f);
+            FitColumn(layout);
+        }
+    }
 }
 }
 
@@ -385,37 +428,14 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     LabelButton(root, "Forget", l.mForgetLabel, l.mShowForget);
     LabelButton(root, "Mods", l.mModsLabel, l.mShowMods);
     LabelButton(root, "Quit", l.mQuitLabel, l.mShowQuit);
-    // up / down over the buttons that are shown (a hidden one would stop the gamepad)
-    std::vector<Button*> shown;
-    for (const char* name : {"Play", "Browse", "Forget", "Mods", "Quit"})
+    // Forget ROM only while a ROM is set (the launcher keeps it so as it runs)
+    if (l.mShowForget)
     {
-        Node* node = root->FindChild(name, true);
+        Node* node = root->FindChild("Forget", true);
         RecompButton* b = node != nullptr ? node->As<RecompButton>() : nullptr;
-        if (b != nullptr && b->IsVisible()) shown.push_back(b);
+        if (b != nullptr) ShowButton(b, game != nullptr && !game->GetRomLocation().empty());
     }
-    for (size_t i = 0; i < shown.size(); ++i)
-    {
-        shown[i]->SetNavUp(i > 0 ? shown[i - 1] : nullptr);
-        shown[i]->SetNavDown(i + 1 < shown.size() ? shown[i + 1] : nullptr);
-    }
-
-    // the content's height: the scroll view around it (Panel/Scroll) scrolls when the window is
-    // shorter, so the buttons can always be reached
-    if (Node* node = root->FindChild("Buttons", true))
-    {
-        if (Widget* w = node->As<Widget>()) FitColumn(w);
-    }
-    if (Node* node = root->FindChild("Layout", true))
-    {
-        Widget* layout = node->As<Widget>();
-        if (layout != nullptr && node->GetParent() != nullptr && node->GetParent()->As<ScrollContainer>() != nullptr)
-        {
-            // top-left in the scroll view; its width follows the view (FitWidth)
-            layout->SetAnchorMode(AnchorMode::TopLeft);
-            layout->SetPosition(0.0f, 0.0f);
-            FitColumn(layout);
-        }
-    }
+    RelayoutButtons(root);
 
     for (uint32_t i = 0; i < root->GetNumChildren(); ++i)
     {
@@ -428,6 +448,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             launcher->SetSounds(l.mSoundStart, l.mSoundQuit, l.mMusic, l.mMusicVolume);
             launcher->SetMoreSounds(l.mSoundDeny, l.mSoundForget);
             launcher->SetCenterContent(l.mCenterContent);
+            launcher->SetShowForget(l.mShowForget);
         }
         else if (RecompMenuController* controller = child->As<RecompMenuController>())
         {
@@ -583,6 +604,7 @@ void RecompLauncher::Tick(float deltaTime)
         }
     }
     RecompSound::Follow(this);
+    if ((mForgetCheck -= deltaTime) <= 0.0f) UpdateForgetButton();
     CenterContent();
     // Play shows "Starting..." for a frame first (the start may take a moment), and lets its
     // sound play out: the game scene replaces this one, sounds and all
@@ -611,7 +633,35 @@ void RecompLauncher::SetCenterContent(bool center)
 void RecompLauncher::EditorTick(float deltaTime)
 {
     Widget::EditorTick(deltaTime);
-    CenterContent(); // the editor's preview as the game shows it
+    // the editor's preview as the game shows it
+    if ((mForgetCheck -= deltaTime) <= 0.0f) UpdateForgetButton();
+    CenterContent();
+}
+
+void RecompLauncher::SetShowForget(bool show)
+{
+    mShowForget = show;
+    mForgetCheck = 0.0f;
+}
+
+// Forget ROM shows while there is a ROM to forget (checked now and then: a script may set one).
+void RecompLauncher::UpdateForgetButton()
+{
+    mForgetCheck = 0.5f;
+    Node* root = GetParent();
+    Node* node = root != nullptr ? root->FindChild("Forget", true) : nullptr;
+    RecompButton* forget = node != nullptr ? node->As<RecompButton>() : nullptr;
+    if (forget == nullptr)
+    {
+        return;
+    }
+    RecompGameLauncher* game = Game();
+    const bool shown = mShowForget && game != nullptr && !game->GetRomLocation().empty();
+    if (forget->IsVisible() != shown)
+    {
+        ShowButton(forget, shown);
+        RelayoutButtons(root);
+    }
 }
 
 // The launcher's content column (a scroll view's content) has a top padding of kLayoutPadding;
@@ -763,6 +813,7 @@ void RecompLauncher::Browse()
     const bool ok = game->SetRomLocation(path, message);
     if (!ok) PlayLauncherSound(this, mSoundDeny.Get<SoundWave>(), false);
     SetMessage(message);
+    UpdateForgetButton();
     EmitSignal("RomChosen", {this, path, ok});
     CallFunction("OnRomChosen", {this, path, ok});
 }
@@ -775,6 +826,7 @@ void RecompLauncher::ForgetRom()
         game->ClearRomLocation();
     }
     DescribeRom();
+    UpdateForgetButton();
 }
 
 void RecompLauncher::OpenMods()
@@ -830,6 +882,7 @@ void RecompLauncher::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Auto Start", this, &mAutoStart));
     outProps.push_back(Property(DatumType::Bool, "Load Mods", this, &mLoadMods));
     outProps.push_back(Property(DatumType::Bool, "Center Content", this, &mCenterContent));
+    outProps.push_back(Property(DatumType::Bool, "Show Forget", this, &mShowForget));
     {
     SCOPED_CATEGORY("Recomp Launcher Sounds");
     outProps.push_back(Property(DatumType::Asset, "Start Sound", this, &mSoundStart, 1, nullptr,
