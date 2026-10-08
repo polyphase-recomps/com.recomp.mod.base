@@ -91,6 +91,7 @@ public:
 
     // How the texture fits the button (ObjectFit: 0 fill, 1 contain, 2 cover, 3 none).
     void SetTextureFit(uint8_t fit);
+    void UpdateMainMenuButton();
 
     // Setting mode: Direction +1 steps up / toggles / next choice / runs an action,
     // -1 steps down / previous choice.
@@ -119,6 +120,7 @@ protected:
     bool mHighlighted = false;
     int32_t mPending = 0;
     uint8_t mTextureFit = 1; // contain
+    float mShownWidth = 0.0f; // Main Menu's width while shown
 };
 
 class MODBASE_API RecompBar : public ProgressBar
@@ -166,6 +168,10 @@ public:
     void SetCloseAction(const std::string& action);
     // B closes the UI (default). Off for UIs that must stay, like a launcher.
     void SetCloseOnBack(bool closeOnBack);
+    // The scene "@mainmenu" (Main Menu) goes to: the launcher, usually (none = the project's
+    // startup scene).
+    void SetMainMenuScene(const AssetRef& scene);
+    const AssetRef& GetMainMenuScene() const;
     // The widget shown/hidden. Empty: a sibling named "Panel", else the parent. Keep the
     // controller outside it: hidden widgets don't tick, so a controller inside the widget
     // it hides can't open it again.
@@ -199,6 +205,7 @@ protected:
     bool mCaptureInput = true;
     WeakPtr<Button> mFirstButton;
     WeakPtr<Widget> mPanel;
+    AssetRef mMainMenuScene;
     glm::vec2 mMaxPanelSize = {0.0f, 0.0f};
     float mPanelMargin = 16.0f;
     int32_t mPanelAlign = 0;

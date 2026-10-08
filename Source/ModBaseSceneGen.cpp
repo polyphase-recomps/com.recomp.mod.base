@@ -372,8 +372,24 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     Widget* footer = Array(b, layout, "Footer", true, kGap, 0.0f, FullWidth(kRowH));
     Button* save = SettingButton(b, footer, "Save", "Save", "@save", 1, At(0, 0, 110.0f, kRowH));
     Button* reset = SettingButton(b, footer, "Reset", "Reset to defaults", "@reset", 1, At(0, 0, 180.0f, kRowH));
+    Button* mainMenu = SettingButton(b, footer, "MainMenu", "Main Menu", "@mainmenu", 1, At(0, 0, 140.0f, kRowH));
+    if (mainMenu != nullptr && mainMenu->GetParent() == footer)
+    {
+        // (a menu made before: Main Menu goes before Close)
+        if (Node* closeNode = footer->FindChild("Close", false))
+        {
+            for (uint32_t i = 0; i < footer->GetNumChildren(); ++i)
+            {
+                if (footer->GetChild((int32_t)i) == closeNode)
+                {
+                    mainMenu->Attach(footer, false, (int32_t)i);
+                    break;
+                }
+            }
+        }
+    }
     Button* close = SettingButton(b, footer, "Close", "Close", "@close", 1, At(0, 0, 110.0f, kRowH));
-    LinkNavigation({{save, reset, close}});
+    LinkNavigation({{save, reset, mainMenu, close}});
     // tab -> its page's first button (else the footer); the page's buttons without a down
     // link (its last row) -> Save. Footer -> up is set when a page is shown (ShowPage).
     for (size_t g = 0; g < tabButtons.size(); ++g)
@@ -388,7 +404,7 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
             if (btn->GetNavDown() == nullptr && save != nullptr) btn->SetNavDown(save);
         }
     }
-    for (Button* btn : {save, reset, close})
+    for (Button* btn : {save, reset, mainMenu, close})
     {
         if (btn != nullptr && btn->GetNavUp() == nullptr && !tabButtons.empty())
         {
@@ -418,6 +434,13 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
         // the root (and the controller in it) must stay visible to see the open button
         controller->SetPanel(panel);
         controller->SetPanelFit(kMaxPanel, kMargin, options.position);
+        // Main Menu goes to the launcher, when there is one
+        const std::string launcherScene = ModLauncher_DefaultName(map);
+        AssetStub* launcherStub = FetchAssetStub(launcherScene);
+        if (launcherStub != nullptr && launcherStub->mType == Scene::GetStaticType())
+        {
+            controller->SetMainMenuScene(AssetRef(LoadAsset<Scene>(launcherScene)));
+        }
         root->SetVisible(true);
         controller->SetToggleButton(options.toggleButton);
         controller->SetToggleAction(options.toggleAction);

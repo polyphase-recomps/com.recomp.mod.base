@@ -85,6 +85,10 @@ MODBASE_API bool Recomp_LoadMods(const std::string& gamePackage);
 // launcher of that UI (else the first one running).
 MODBASE_API bool RecompLauncher_Token(const std::string& name, std::string& out);
 MODBASE_API bool RecompLauncher_Command(const std::string& command, Node* from);
+// Main Menu (a RecompButton with Setting "@mainmenu"): the game's scene gives way to the main
+// menu's (the menu controller's Main Menu Scene, else the project's startup scene), which stops
+// the game; a launcher there doesn't auto-start it again.
+MODBASE_API bool Recomp_GoToMainMenu(Node* from);
 
 // Applies a map's menu style and launcher settings to a launcher UI (a generated scene's
 // root or a live instance): background, logo, titles, button labels and which are shown.

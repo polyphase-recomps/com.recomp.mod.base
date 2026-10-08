@@ -14,6 +14,7 @@
 
 #include "AssetManager.h"
 #include "Assets/Font.h"
+#include "Assets/Scene.h"
 #include "Assets/SoundWave.h"
 #include "Assets/Texture.h"
 #include "Log.h"
@@ -498,6 +499,7 @@ void RecompButton::Activate()
         else if (mSetting.compare(0, 6, "@page:") == 0) ShowPage(this, mSetting.substr(6));
         else if (mSetting.compare(0, 10, "@launcher:") == 0) RecompLauncher_Command(mSetting.substr(10), this);
         else if (mSetting.compare(0, 12, "@disclaimer:") == 0) RecompDisclaimer_Command(mSetting.substr(12), this);
+        else if (mSetting == "@mainmenu") Recomp_GoToMainMenu(this);
         else settings.Step(mSetting, mDirection);
         return;
     }
@@ -556,6 +558,10 @@ void RecompButton::Tick(float deltaTime)
             quad->SetBorderWidth(selected ? mHighlightWidth : 0.0f);
         }
     }
+    if (mSetting == "@mainmenu")
+    {
+        UpdateMainMenuButton();
+    }
     if (!mLabelFormat.empty())
     {
         bool missing = false;
@@ -576,6 +582,25 @@ void RecompButton::Tick(float deltaTime)
         }
         mPending = 0;
     }
+}
+
+// Main Menu only while a game runs (over the launcher there is nothing to go back to): hidden,
+// it takes no room in its row and the buttons beside it lead to each other.
+void RecompButton::UpdateMainMenuButton()
+{
+    const bool shown = RecompIsLive();
+    if (shown == IsVisible())
+    {
+        return;
+    }
+    if (!shown && GetWidth() > 0.0f) mShownWidth = GetWidth();
+    SetVisible(shown);
+    SetWidth(shown ? (mShownWidth > 0.0f ? mShownWidth : 140.0f) : 0.0f);
+    Button* left = GetNavLeft() != nullptr ? GetNavLeft()->As<Button>() : nullptr;
+    Button* right = GetNavRight() != nullptr ? GetNavRight()->As<Button>() : nullptr;
+    if (left != nullptr) left->SetNavRight(shown ? this : (Node*)right);
+    if (right != nullptr) right->SetNavLeft(shown ? this : (Node*)left);
+    if (!shown && Button::GetSelectedButton() == this) Button::SetSelectedButton(left != nullptr ? left : right);
 }
 
 void RecompButton::PreRender()
@@ -1161,6 +1186,16 @@ void RecompMenuController::Tick(float deltaTime)
     GamepadScroll(deltaTime, target);
 }
 
+void RecompMenuController::SetMainMenuScene(const AssetRef& scene)
+{
+    mMainMenuScene = scene;
+}
+
+const AssetRef& RecompMenuController::GetMainMenuScene() const
+{
+    return mMainMenuScene;
+}
+
 void RecompMenuController::SetSounds(const AssetRef& move, const AssetRef& select, const AssetRef& cancel,
                                      const AssetRef& back, float volume)
 {
@@ -1290,6 +1325,8 @@ void RecompMenuController::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::Bool, "Close On Back", this, &mCloseOnBack));
     outProps.push_back(Property(DatumType::Bool, "In HOME Menu", this, &mInHomeMenu));
     outProps.push_back(Property(DatumType::String, "Bound Variable", this, &mBoundVariable));
+    outProps.push_back(Property(DatumType::Asset, "Main Menu Scene", this, &mMainMenuScene, 1, nullptr,
+                                int32_t(Scene::GetStaticType())));
     {
     SCOPED_CATEGORY("Recomp Menu Sounds");
     outProps.push_back(Property(DatumType::Asset, "Move Sound", this, &mSounds[(int)Sound::Move], 1, nullptr,

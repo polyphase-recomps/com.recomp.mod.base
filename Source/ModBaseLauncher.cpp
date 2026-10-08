@@ -146,6 +146,43 @@ bool RecompLauncher_Token(const std::string& name, std::string& out)
     return true;
 }
 
+namespace
+{
+bool& BackFromGame()
+{
+    static bool sBack = false; // set by Main Menu, taken by the next launcher's auto start
+    return sBack;
+}
+}
+
+bool Recomp_GoToMainMenu(Node* from)
+{
+    World* world = from != nullptr ? from->GetWorld() : GetWorld(0);
+    if (world == nullptr)
+    {
+        return false;
+    }
+    std::string sceneName;
+    if (RecompMenuController* controller = RecompMenuController::FindFor(from))
+    {
+        if (Scene* scene = controller->GetMainMenuScene().Get<Scene>()) sceneName = scene->GetName();
+    }
+    if (sceneName.empty())
+    {
+        const EngineConfig* config = GetEngineConfig();
+        if (config != nullptr) sceneName = config->mDefaultScene;
+    }
+    if (sceneName.empty())
+    {
+        LogWarning("Main Menu: no scene to go to (set the menu's Main Menu Scene, or the project's default scene)");
+        return false;
+    }
+    BackFromGame() = true;
+    LogDebug("Main Menu: %s", sceneName.c_str());
+    world->LoadScene(sceneName.c_str(), false);
+    return true;
+}
+
 bool RecompLauncher_Command(const std::string& command, Node* from)
 {
     RecompLauncher* launcher = RecompLauncher::Find(from);
@@ -599,7 +636,10 @@ void RecompLauncher::Tick(float deltaTime)
             mMusicStarted = true;
             RecompSound::Play(this, mMusic.Get<SoundWave>(), mMusicVolume, true, "music");
         }
-        if (mAutoStart && game != nullptr && !game->IsStarted() && IsReady())
+        // (back from the game through Main Menu: the player wants the menu, not the game again)
+        const bool backFromGame = BackFromGame();
+        BackFromGame() = false;
+        if (mAutoStart && !backFromGame && game != nullptr && !game->IsStarted() && IsReady())
         {
             Play();
         }
