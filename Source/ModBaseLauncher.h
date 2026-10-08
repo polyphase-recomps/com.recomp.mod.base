@@ -161,6 +161,7 @@ protected:
     bool mCenterContent = true;
     void CenterContent();
     bool mShowForget = false;
+    int32_t mOpenModsPending = 0; // frames until a just-added settings menu opens
     float mForgetCheck = 0.0f;
     void UpdateForgetButton();
     bool mSetUp = false;

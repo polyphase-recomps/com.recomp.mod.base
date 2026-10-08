@@ -8,6 +8,7 @@
 #include "ModBaseSound.h"
 
 #include "ModBaseModMap.h"
+#include "ModBaseSceneGen.h"
 #include "ModBaseSettings.h"
 #include "ModBaseUtil.h"
 #include "ModBaseWidgets.h"
@@ -484,6 +485,15 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             launcher->SetGameScene(l.mGameScene);
             launcher->SetAutoStart(l.mAutoStart);
             launcher->SetSounds(l.mSoundStart, l.mSoundQuit, l.mMusic, l.mMusicVolume);
+#if EDITOR
+            // the Mods button's scene: the settings scene, made before or after the launcher
+            const std::string modsScene = ModScene_DefaultName(&map);
+            AssetStub* modsStub = FetchAssetStub(modsScene);
+            if (modsStub != nullptr && modsStub->mType == Scene::GetStaticType())
+            {
+                launcher->SetModsScene(AssetRef(LoadAsset<Scene>(modsScene)));
+            }
+#endif
             launcher->SetMoreSounds(l.mSoundDeny, l.mSoundForget);
             launcher->SetCenterContent(l.mCenterContent);
             launcher->SetShowForget(l.mShowForget);
@@ -645,6 +655,11 @@ void RecompLauncher::Tick(float deltaTime)
         }
     }
     RecompSound::Follow(this);
+    if (mOpenModsPending > 0 && --mOpenModsPending == 0)
+    {
+        if (RecompMenuController* menu = RecompMenuController::FindSettingsMenu()) menu->Open();
+        else SetMessage("The Mods Scene has no settings menu (its MenuController): generate it again");
+    }
     if ((mForgetCheck -= deltaTime) <= 0.0f) UpdateForgetButton();
     CenterContent();
     // Play shows "Starting..." for a frame first (the start may take a moment), and lets its
@@ -873,12 +888,19 @@ void RecompLauncher::ForgetRom()
 void RecompLauncher::OpenMods()
 {
     RecompMenuController* menu = RecompMenuController::FindSettingsMenu();
-    if (menu == nullptr)
+    if (menu != nullptr)
     {
-        SetMessage("No mod settings menu: generate one (Tools > Recomp > Mods) and set it as the launcher's Mods Scene");
+        menu->Open();
         return;
     }
-    menu->Open();
+    if (mModsScene.Get<Scene>() == nullptr)
+    {
+        SetMessage("No Mods Scene: generate the Mod Settings scene, then Update the launcher");
+        return;
+    }
+    // not added yet: added now, opened once it has started (it hides itself as it starts)
+    AddModsScene();
+    mOpenModsPending = 3;
 }
 
 void RecompLauncher::Quit()
