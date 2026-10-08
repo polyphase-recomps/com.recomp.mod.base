@@ -603,9 +603,49 @@ void RecompButton::UpdateMainMenuButton()
     if (!shown && Button::GetSelectedButton() == this) Button::SetSelectedButton(left != nullptr ? left : right);
 }
 
+void RecompButton::SetBaseTextSize(float size)
+{
+    mBaseTextSize = size;
+    mFitBase = -1.0f; // fit again
+}
+
+// A label wider than the button is drawn smaller (its size times what fits / its width, 40% at
+// least), each time the label, the button's width or the size changes.
+void RecompButton::FitLabel()
+{
+    Text* text = GetText();
+    if (text == nullptr)
+    {
+        return;
+    }
+    if (mBaseTextSize <= 0.0f) mBaseTextSize = text->GetTextSize();
+    const std::string& label = GetTextString();
+    const float width = GetWidth();
+    if (label == mFitLabel && width == mFitWidth && mBaseTextSize == mFitBase)
+    {
+        return;
+    }
+    text->SetTextSize(mBaseTextSize);
+    const float scale = text->GetAbsoluteScale().x > 0.0f ? text->GetAbsoluteScale().x : 1.0f;
+    const float textW = label.empty() ? 0.0f : text->GetTextWidth() / scale;
+    if (textW < 0.0f || textW > 1.0e6f)
+    {
+        return; // not measurable yet (no font loaded): again next frame
+    }
+    mFitLabel = label;
+    mFitWidth = width;
+    mFitBase = mBaseTextSize;
+    const float available = width * (1.0f - 2.0f * 0.035f) - 8.0f; // the Button's text padding, a margin
+    if (textW > available && available > 0.0f)
+    {
+        text->SetTextSize(std::max(mBaseTextSize * available / textW, mBaseTextSize * 0.4f));
+    }
+}
+
 void RecompButton::PreRender()
 {
     Button::PreRender();
+    FitLabel();
     Quad* quad = GetQuad();
     const ObjectFit fit = mTextureFit < uint8_t(ObjectFit::Count) ? ObjectFit(mTextureFit) : ObjectFit::Contain;
     if (quad != nullptr && quad->GetObjectFit() != fit)
@@ -638,6 +678,7 @@ void RecompButton::GatherProperties(std::vector<Property>& outProps)
     outProps.push_back(Property(DatumType::String, "Label Format", this, &mLabelFormat));
     outProps.push_back(Property(DatumType::Color, "Highlight Color", this, &mHighlightColor));
     outProps.push_back(Property(DatumType::Float, "Highlight Width", this, &mHighlightWidth));
+    outProps.push_back(Property(DatumType::Float, "Base Text Size", this, &mBaseTextSize));
     static const char* kFits[] = {"Fill", "Contain", "Cover", "None"};
     outProps.push_back(Property(DatumType::Byte, "Texture Fit", this, &mTextureFit, 1, nullptr, NULL_DATUM,
                                 int32_t(ObjectFit::Count), kFits));
@@ -775,6 +816,7 @@ void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
         if (Text* t = b->GetText())
         {
             StyleText(t, fonts.button, tab ? s.mTabTextSize : s.mButtonTextSize, s.mButtonTextColor);
+            b->SetBaseTextSize(tab ? s.mTabTextSize : s.mButtonTextSize);
         }
         b->MarkDirty();
         return;

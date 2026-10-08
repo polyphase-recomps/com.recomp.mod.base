@@ -92,6 +92,9 @@ public:
     // How the texture fits the button (ObjectFit: 0 fill, 1 contain, 2 cover, 3 none).
     void SetTextureFit(uint8_t fit);
     void UpdateMainMenuButton();
+    // The label's size (the menu style's): a label too wide for the button is drawn smaller,
+    // down to 40% of it, so it fits.
+    void SetBaseTextSize(float size);
 
     // Setting mode: Direction +1 steps up / toggles / next choice / runs an action,
     // -1 steps down / previous choice.
@@ -121,6 +124,11 @@ protected:
     int32_t mPending = 0;
     uint8_t mTextureFit = 1; // contain
     float mShownWidth = 0.0f; // Main Menu's width while shown
+    float mBaseTextSize = 0.0f; // 0 = the label's size as it is
+    void FitLabel();
+    std::string mFitLabel;     // what FitLabel last fitted (it fits again when one changes)
+    float mFitWidth = -1.0f;
+    float mFitBase = -1.0f;
 };
 
 class MODBASE_API RecompBar : public ProgressBar
