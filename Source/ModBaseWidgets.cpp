@@ -1058,11 +1058,15 @@ RecompMenuController* RecompMenuController::FindSettingsMenu()
     for (RecompMenuController* c : Controllers())
     {
         Node* root = c->GetParent();
-        if (root != nullptr && root->FindChild("Pages", true) != nullptr) return c;
-        // (a launcher's or a disclaimer's own menu is not a settings menu)
+        // (a launcher's or a disclaimer's own menu is not a settings menu - and the settings
+        // menu a launcher adds sits inside the launcher's root: so the pages are looked for in
+        // the menu's own panel, not its parent)
         const bool frontEnd = root != nullptr && (root->FindChild("Launcher", false) != nullptr ||
                                                   root->FindChild("Disclaimer", false) != nullptr);
-        if (first == nullptr && root != nullptr && !frontEnd) first = c;
+        if (frontEnd) continue;
+        Widget* panel = c->Target();
+        if (panel != nullptr && panel != root && panel->FindChild("Pages", true) != nullptr) return c;
+        if (first == nullptr && root != nullptr) first = c;
     }
     return first;
 }
