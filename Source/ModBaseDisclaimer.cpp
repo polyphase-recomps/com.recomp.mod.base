@@ -237,10 +237,9 @@ void RecompDisclaimer::FitText()
     {
         return;
     }
-    const float scale = text->GetAbsoluteScale().y > 0.0f ? text->GetAbsoluteScale().y : 1.0f;
-    // (no text: the engine's extents stay at their unset extremes)
+    // (layout pixels: font units x size / font size; no text: the extents stay at their extremes)
     const float measured = text->GetTextHeight();
-    const float height = measured > 0.0f && measured < 1.0e6f ? std::ceil(measured / scale) + 4.0f : 4.0f;
+    const float height = measured > 0.0f && measured < 1.0e6f ? std::ceil(measured) + 4.0f : 4.0f;
     bool changed = std::fabs(text->GetHeight() - height) > 1.0f;
     if (changed) text->SetHeight(height);
     if (Node* node = FindNamed(root, "Buttons"))

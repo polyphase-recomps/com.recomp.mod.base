@@ -620,14 +620,16 @@ void RecompButton::FitLabel()
     }
     if (mBaseTextSize <= 0.0f) mBaseTextSize = text->GetTextSize();
     const std::string& label = GetTextString();
-    const float width = GetWidth();
-    if (label == mFitLabel && width == mFitWidth && mBaseTextSize == mFitBase)
+    // the button's width as laid out (a stretched one's from its rect), in layout pixels
+    const float buttonScale = GetAbsoluteScale().x > 0.0f ? GetAbsoluteScale().x : 1.0f;
+    const float width = GetRect().mWidth > 0.0f ? GetRect().mWidth / buttonScale : GetWidth();
+    if (label == mFitLabel && std::fabs(width - mFitWidth) < 0.5f && mBaseTextSize == mFitBase)
     {
         return;
     }
     text->SetTextSize(mBaseTextSize);
-    const float scale = text->GetAbsoluteScale().x > 0.0f ? text->GetAbsoluteScale().x : 1.0f;
-    const float textW = label.empty() ? 0.0f : text->GetTextWidth() / scale;
+    // (layout pixels already: the font's units times text size / font size)
+    const float textW = label.empty() ? 0.0f : text->GetTextWidth();
     if (textW < 0.0f || textW > 1.0e6f)
     {
         return; // not measurable yet (no font loaded): again next frame

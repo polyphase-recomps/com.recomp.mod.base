@@ -413,9 +413,8 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
                 t->SetColor(s.mInfoColor);
                 t->SetText(l.mFooterText);
                 t->SetVerticalJustification(Justification::Center);
-                // its width as drawn, back in layout pixels (the editor scales its preview)
-                const float scale = t->GetAbsoluteScale().x > 0.0f ? t->GetAbsoluteScale().x : 1.0f;
-                textW = hasText ? t->GetTextWidth() / scale : 0.0f;
+                // its width in layout pixels (GetTextWidth's are: font units x size / font size)
+                textW = hasText ? t->GetTextWidth() : 0.0f;
                 if (hasText && textW <= 0.0f) textW = float(l.mFooterText.size()) * textSize * 0.55f;
                 if (hasText) textW += 2.0f;
                 t->SetAnchorMode(AnchorMode::TopLeft);
