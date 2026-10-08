@@ -8,6 +8,7 @@
 #if EDITOR
 
 #include "ModBaseDisplay.h"
+#include "ModBaseExport.h"
 #include "ModBaseImport.h"
 #include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
@@ -32,7 +33,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -60,6 +61,7 @@ const char* kDisplayWindow = "recomp.mods.display";
 const char* kStyleWindow = "recomp.mods.style";
 const char* kLauncherWindow = "recomp.mods.launcher";
 const char* kDisclaimerWindow = "recomp.mods.disclaimer";
+const char* kExportWindow = "recomp.export.mods.manifest";
 const char* kGenerateWindow = "recomp.mods.generate";
 const char* kGenerateModal = "Generate Mod Settings Scene";
 
@@ -1801,6 +1803,184 @@ void DrawDisclaimer(void*)
 }
 
 // ---- inspector, create asset ---------------------------------------------------------------
+// ---- Export > Mods > Manifest: the entries as a Recomp Zoo mod import ------------------------
+std::string sExportMessage;
+ImVec4 sExportColor = kGood;
+std::vector<std::string> sExportDetails;
+
+// The Zoo's game id when none is set: the game package's title ("Super Smash Bros. (US)" ->
+// "super-smash-bros"), else the map's title without " Mods", else the package id's last part.
+std::string GuessZooGameId(const ModMap* map)
+{
+    std::string title;
+    for (const GamePackage& g : FindGamePackages())
+    {
+        if (g.id == map->mGame && g.title != g.id) title = g.title;
+    }
+    if (title.empty())
+    {
+        title = map->mTitle;
+        const std::string suffix = " Mods";
+        if (title.size() > suffix.size() && title.compare(title.size() - suffix.size(), suffix.size(), suffix) == 0)
+            title.resize(title.size() - suffix.size());
+    }
+    std::string id = ModZoo_Slug(title);
+    if (id.empty())
+    {
+        const size_t dot = map->mGame.find_last_of('.');
+        id = ModZoo_Slug(dot == std::string::npos ? map->mGame : map->mGame.substr(dot + 1));
+    }
+    return id;
+}
+
+std::string ZooExportPath(const ModMap* map, const std::string& gameId)
+{
+    if (!map->mZooExportPath.empty()) return map->mZooExportPath;
+    return GetEngineState()->mProjectDirectory + "Exports/RecompZoo/" + (gameId.empty() ? std::string("mods") : gameId) +
+           ".mods.json";
+}
+
+void ExportZoo(ModMap* map, const std::string& strategy)
+{
+    sExportDetails.clear();
+    ModZooExportOptions options;
+    options.gameId = map->mZooGameId.empty() ? GuessZooGameId(map) : map->mZooGameId;
+    options.strategy = strategy;
+    const ModZooExportResult result = ModMap_ExportZoo(*map, options);
+    if (!result.errors.empty())
+    {
+        sExportMessage = result.errors.front();
+        sExportColor = kBad;
+        return;
+    }
+    const std::string path = ZooExportPath(map, options.gameId);
+    std::error_code ec;
+    const std::filesystem::path file = std::filesystem::u8path(path);
+    if (file.has_parent_path()) std::filesystem::create_directories(file.parent_path(), ec);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out << result.json;
+    out.close();
+    if (!out)
+    {
+        sExportMessage = "Could not write " + path;
+        sExportColor = kBad;
+        return;
+    }
+    sExportMessage = "Exported " + std::to_string(result.exported) + " mod(s) of " + options.gameId + " to " + path;
+    sExportColor = result.skipped.empty() ? kGood : kWarn;
+    for (const std::string& s : result.skipped) sExportDetails.push_back("Left out: " + s);
+    for (const std::string& n : result.notes) sExportDetails.push_back("Note: " + n);
+    LogDebug("Recomp Zoo export: %s", sExportMessage.c_str());
+}
+
+void DrawExportManifest(void*)
+{
+    static int sStrategy = 0; // merge, replace
+    std::vector<ModMap*> maps = ModMap_FindAll();
+    ModMap* map = CurrentMap();
+    if (map == nullptr && !maps.empty()) map = maps.front();
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::BeginCombo("Mod Map", map ? map->GetName().c_str() : "(none)"))
+    {
+        for (ModMap* m : maps)
+        {
+            if (ImGui::Selectable(m->GetName().c_str(), m == map))
+            {
+                sMapName = m->GetName();
+                map = m;
+                sExportMessage.clear();
+                sExportDetails.clear();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (map == nullptr)
+    {
+        ImGui::TextColored(kWarn, "Create a Mod Map first (Tools > Recomp > Mods > Mod Map Editor).");
+        return;
+    }
+    ImGui::TextDisabled("Writes the map's entries as a Recomp Zoo mod import (polyphase-recomp-zoo/mods, schema 1).");
+    ImGui::Separator();
+
+    // the Zoo's game id (kept on the map; empty = from the title)
+    const std::string guess = GuessZooGameId(map);
+    std::string gameId = map->mZooGameId;
+    if (gameId.empty()) gameId = guess;
+    if (InputString("Zoo Game Id", gameId, 260.0f))
+    {
+        map->mZooGameId = gameId == guess ? std::string() : gameId;
+        MarkDirty(map);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("From title"))
+    {
+        map->mZooGameId.clear();
+        gameId = guess;
+        MarkDirty(map);
+    }
+    if (!ModZoo_IsValidGameId(gameId))
+        ImGui::TextColored(kBad, "Lowercase letters, digits and single dashes (the game's id in Recomp Zoo).");
+
+    const char* strategies[] = {"merge", "replace"};
+    ImGui::SetNextItemWidth(260.0f);
+    ImGui::Combo("Strategy", &sStrategy, strategies, 2);
+    ImGui::SameLine();
+    ImGui::TextDisabled(sStrategy == 0 ? "(updates mods with the same id, adds new ones)" : "(replaces the game's whole mod list)");
+
+    // where
+    std::string path = ZooExportPath(map, gameId);
+    if (InputString("File", path, 420.0f))
+    {
+        map->mZooExportPath = path;
+        MarkDirty(map);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...") && sHooks != nullptr && sHooks->ShowSaveFileDialog != nullptr)
+    {
+        char picked[1024] = {};
+        const std::string name = gameId + ".mods.json";
+        if (sHooks->ShowSaveFileDialog("Export Recomp Zoo Mods", "JSON|*.json", name.c_str(), picked, sizeof(picked)) != 0)
+        {
+            std::string chosen = picked;
+            if (chosen.size() < 5 || chosen.compare(chosen.size() - 5, 5, ".json") != 0) chosen += ".json";
+            map->mZooExportPath = chosen;
+            MarkDirty(map);
+        }
+    }
+    if (!map->mZooExportPath.empty())
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Default")) { map->mZooExportPath.clear(); MarkDirty(map); }
+    }
+
+    // what goes in
+    ModZooExportOptions preview;
+    preview.gameId = ModZoo_IsValidGameId(gameId) ? gameId : std::string("preview");
+    const ModZooExportResult check = ModMap_ExportZoo(*map, preview);
+    ImGui::Text("%d of %d entries will be exported.", check.exported, (int)map->mEntries.size());
+    if (!check.skipped.empty())
+    {
+        ImGui::TextColored(kWarn, "%d left out (the Zoo would refuse them; fix them in the Mod Map Editor):",
+                           (int)check.skipped.size());
+        for (const std::string& s : check.skipped) ImGui::BulletText("%s", s.c_str());
+    }
+    ImGui::TextDisabled("Built-in display.* settings aren't Mod Map entries and aren't exported.");
+
+    ImGui::Separator();
+    ImGui::BeginDisabled(!ModZoo_IsValidGameId(gameId) || check.exported == 0);
+    if (ImGui::Button("Export", ImVec2(140.0f, 0.0f)))
+    {
+        ExportZoo(map, strategies[sStrategy]);
+        if (!map->mZooExportPath.empty() || !map->mZooGameId.empty()) SaveMap(map); // keeps the id and the file
+    }
+    ImGui::EndDisabled();
+    if (!sExportMessage.empty())
+    {
+        ImGui::TextColored(sExportColor, "%s", sExportMessage.c_str());
+        for (const std::string& d : sExportDetails) ImGui::BulletText("%s", d.c_str());
+    }
+}
+
 void DrawModMapInspector(void* object, void*)
 {
     ModMap* map = static_cast<ModMap*>(object);
@@ -1860,6 +2040,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->RegisterWindow(hookId, "Menu Style", kStyleWindow, DrawMenuStyle, nullptr);
         hooks->RegisterWindow(hookId, "Launcher", kLauncherWindow, DrawLauncher, nullptr);
         hooks->RegisterWindow(hookId, "Disclaimer", kDisclaimerWindow, DrawDisclaimer, nullptr);
+        hooks->RegisterWindow(hookId, "Export Mods Manifest", kExportWindow, DrawExportManifest, nullptr);
 #if MODBASE_HAS_MODALS
         if (hooks->OpenModal == nullptr)
 #endif
@@ -1882,6 +2063,7 @@ void ModBaseEditor::Register(EditorUIHooks* hooks, uint64_t hookId)
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Menu Style", OpenWindow, (void*)kStyleWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Launcher", OpenWindow, (void*)kLauncherWindow, nullptr);
         hooks->AddMenuItem(hookId, "Tools", "Recomp/Mods/Disclaimer", OpenWindow, (void*)kDisclaimerWindow, nullptr);
+        hooks->AddMenuItem(hookId, "Tools", "Recomp/Export/Mods/Manifest", OpenWindow, (void*)kExportWindow, nullptr);
     }
     if (hooks->RegisterInspector != nullptr)
     {

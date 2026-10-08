@@ -307,6 +307,26 @@ All are in the Add Node list. Their bindings are inspector properties (category
 `Group`, `Label`, `Bound`, `SettingButton`, `LinkNavigation`, `RootCanvas`) for your own
 editor tools.
 
+### Export the mods to Recomp Zoo (optional)
+
+**Tools > Recomp > Export > Mods > Manifest** writes the Mod Map's entries as a Recomp Zoo
+mod import (`"type": "polyphase-recomp-zoo/mods"`, `schemaVersion` 1: RecompZoo's
+`public/schemas/mod-import.schema.json`). The Zoo's Admin imports it with **merge** (update
+mods with the same id, add new ones) or **replace** (the game's whole list).
+
+- **Zoo Game Id**: the game's id in the Zoo, in lowercase kebab-case. By default it comes from the
+  game's title ("Super Smash Bros. (US)" gives `super-smash-bros`). It's kept on the Mod Map.
+- **File**: by default `Exports/RecompZoo/<game id>.mods.json` in the project. **Browse...** picks
+  another; it's kept on the Mod Map.
+- Entries keep their ids (the player's settings keys), field names and enum strings.
+- Entries the Zoo would refuse are left out and listed, so the rest still imports. These are:
+  - no id, or a duplicate id;
+  - a Choice whose default isn't one of its values;
+  - a Bar without its maximum;
+  - a source without its name, or an Address of 0;
+  - a default outside min..max, or a Toggle default other than 0/1.
+- The built-in `display.*` settings aren't exported.
+
 ## The resolution scaler
 
 Every player node places its picture by the player's **Screen** setting:
@@ -409,5 +429,7 @@ The existing providers:
 | `ModBaseSceneGen.*` | Generate / update the settings scene (editor) |
 | `ModBaseImport.*` | Automatic import: live game, source scan (editor) |
 | `ModBaseEditor.*` | Tools > Recomp > Mods windows, ModMap inspector, Create Asset item |
+| `ModBaseExport.*` | Recomp Zoo mod import export (Tools > Recomp > Export > Mods > Manifest) |
+| `ModBaseLook.*` | Generated scenes keep sizes changed in the scene on Update |
 | `ModBaseLua.*` | `Recomp` and `Mods` tables |
 | `Tools/check_addon.ps1` | Compile check outside the editor |

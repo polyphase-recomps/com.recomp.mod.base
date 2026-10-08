@@ -223,6 +223,10 @@ public:
     ModStyle mStyle;
     ModLauncherSettings mLauncher;
     ModDisclaimerSettings mDisclaimer;
+    // Tools > Recomp > Export > Mods > Manifest: the game's id in Recomp Zoo ("super-smash-bros";
+    // "" = from the title) and the file last exported to ("" = Exports/RecompZoo in the project)
+    std::string mZooGameId;
+    std::string mZooExportPath;
 
     const ModEntry* Find(const std::string& id) const;
     ModEntry* Find(const std::string& id);

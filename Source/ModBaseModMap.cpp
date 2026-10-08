@@ -19,7 +19,7 @@ namespace
 {
 // Our own format version, written after the engine's asset header (addons can't add
 // to ASSET_VERSION_*). 2: the menu style. 3: the launcher.
-constexpr uint32_t kModMapVersion = 12;
+constexpr uint32_t kModMapVersion = 13;
 
 void ReadStyle(Stream& stream, ModStyle& s)
 {
@@ -379,6 +379,13 @@ void ModMap::LoadStream(Stream& stream, Platform platform)
     {
         ReadDisclaimer(stream, mDisclaimer);
     }
+    mZooGameId.clear();
+    mZooExportPath.clear();
+    if (version >= 13)
+    {
+        stream.ReadString(mZooGameId);
+        stream.ReadString(mZooExportPath);
+    }
 }
 
 void ModMap::SaveStream(Stream& stream, Platform platform)
@@ -438,6 +445,8 @@ void ModMap::SaveStream(Stream& stream, Platform platform)
     stream.WriteUint8(mLauncher.mCenterContent ? 1 : 0); // version 10
     stream.WriteUint8((uint8_t)((mStyle.mPanelBackground ? 1 : 0) | (mLauncher.mShowBackground ? 2 : 0))); // 11
     WriteDisclaimer(stream, mDisclaimer); // version 12
+    stream.WriteString(mZooGameId);        // version 13
+    stream.WriteString(mZooExportPath);
 }
 
 void ModMap::GatherProperties(std::vector<Property>& outProps)
