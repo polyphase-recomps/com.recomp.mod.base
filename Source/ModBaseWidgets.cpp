@@ -7,6 +7,7 @@
 
 #include "ModBaseDisclaimer.h"
 #include "ModBaseLauncher.h"
+#include "ModBaseLook.h"
 #include "ModBaseModMap.h"
 #include "ModBaseProvider.h"
 #include "ModBaseSettings.h"
@@ -609,6 +610,11 @@ void RecompButton::SetBaseTextSize(float size)
     mFitBase = -1.0f; // fit again
 }
 
+float RecompButton::GetBaseTextSize() const
+{
+    return mBaseTextSize;
+}
+
 // A label wider than the button is drawn smaller (its size times what fits / its width, 40% at
 // least), each time the label, the button's width or the size changes.
 void RecompButton::FitLabel()
@@ -619,6 +625,12 @@ void RecompButton::FitLabel()
         return;
     }
     if (mBaseTextSize <= 0.0f) mBaseTextSize = text->GetTextSize();
+    // the label's Text Size changed in the inspector since: that is the size now
+    if (mFitSize >= 0.0f && !mAutoSizeText && std::fabs(text->GetTextSize() - mFitSize) > 0.01f)
+    {
+        mBaseTextSize = text->GetTextSize();
+        mFitSize = -1.0f;
+    }
     const std::string& label = GetTextString();
     // the button's width as laid out (a stretched one's from its rect), in layout pixels
     const float buttonScale = GetAbsoluteScale().x > 0.0f ? GetAbsoluteScale().x : 1.0f;
@@ -642,6 +654,7 @@ void RecompButton::FitLabel()
     {
         text->SetTextSize(std::max(mBaseTextSize * available / textW, mBaseTextSize * 0.4f));
     }
+    mFitSize = text->GetTextSize();
 }
 
 void RecompButton::PreRender()
@@ -759,10 +772,11 @@ void RecompBar::SetVariables(const std::string& variable, const std::string& max
 // ---- style -------------------------------------------------------------------------------
 namespace
 {
+// The size the style gives a text, unless it was changed in the scene since (ModBaseLook.h).
 void StyleText(Text* t, Font* font, float size, glm::vec4 color)
 {
     t->SetFont(font);
-    t->SetTextSize(size);
+    t->SetTextSize(RecompLook::Apply(t, "textSize", t->GetTextSize(), size));
     t->SetColor(color);
 }
 
@@ -780,6 +794,7 @@ struct StyleFonts
     Font* header;
     Font* body;
     Font* button;
+    bool namedTexts;
 };
 
 void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
@@ -817,15 +832,21 @@ void ApplyStyle(Node* node, const ModStyle& s, const StyleFonts& fonts)
         const bool tab = parent != nullptr && parent->GetName() == "Tabs";
         if (Text* t = b->GetText())
         {
-            StyleText(t, fonts.button, tab ? s.mTabTextSize : s.mButtonTextSize, s.mButtonTextColor);
-            b->SetBaseTextSize(tab ? s.mTabTextSize : s.mButtonTextSize);
+            // (the label's own size is FitLabel's, maybe smaller: the button keeps the size)
+            const float current = b->GetBaseTextSize() > 0.0f ? b->GetBaseTextSize() : t->GetTextSize();
+            const float size = RecompLook::Apply(b, "textSize", current, tab ? s.mTabTextSize : s.mButtonTextSize);
+            t->SetFont(fonts.button);
+            t->SetTextSize(size);
+            t->SetColor(s.mButtonTextColor);
+            b->SetBaseTextSize(size);
         }
         b->MarkDirty();
         return;
     }
     if (Text* t = node->As<Text>())
     {
-        if (name == "Title") StyleText(t, fonts.header, s.mTitleSize, s.mTitleColor);
+        if (!fonts.namedTexts) t->SetFont(fonts.body);
+        else if (name == "Title") StyleText(t, fonts.header, s.mTitleSize, s.mTitleColor);
         else if (name == "Note") StyleText(t, fonts.body, s.mNoteSize, s.mInfoColor);
         else if (name == "Value") StyleText(t, fonts.body, s.mValueSize, s.mValueColor);
         else if (name == "Label")
@@ -868,14 +889,14 @@ Font* ModStyle_Font(const ModStyle& style, const AssetRef& role)
     return font;
 }
 
-void ModStyle_Apply(Node* root, const ModStyle& style)
+void ModStyle_Apply(Node* root, const ModStyle& style, bool namedTexts)
 {
     if (root == nullptr)
     {
         return;
     }
     const StyleFonts fonts = {ModStyle_Font(style, style.mHeaderFont), ModStyle_Font(style, style.mBodyFont),
-                              ModStyle_Font(style, style.mButtonFont)};
+                              ModStyle_Font(style, style.mButtonFont), namedTexts};
     ApplyStyle(root, style, fonts);
 }
 

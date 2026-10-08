@@ -5,6 +5,7 @@
  */
 
 #include "ModBaseLauncher.h"
+#include "ModBaseLook.h"
 #include "ModBaseSound.h"
 
 #include "ModBaseModMap.h"
@@ -214,9 +215,18 @@ void StyleText(Node* root, const char* name, Font* font, float size, glm::vec4 c
     Text* t = node != nullptr ? node->As<Text>() : nullptr;
     if (t == nullptr) return;
     t->SetFont(font);
-    t->SetTextSize(size);
+    t->SetTextSize(RecompLook::Apply(t, "textSize", t->GetTextSize(), size)); // (unless changed in the scene)
     t->SetColor(color);
     if (text != nullptr) t->SetText(*text);
+}
+
+// Hidden: no height (a column keeps a hidden child's place). Shown: the height it had when shown
+// (the user's, when they changed it), `fallback` before it was ever seen shown.
+void ShowWidget(Widget* w, bool shown, float fallback)
+{
+    if (w->IsVisible() && w->GetHeight() > 0.0f) RecompLook::Remember(w, "shownHeight", w->GetHeight());
+    w->SetVisible(shown);
+    w->SetHeight(shown ? RecompLook::Recall(w, "shownHeight", fallback) : 0.0f);
 }
 
 float FloatProperty(Node* node, const char* name, float fallback)
@@ -268,8 +278,7 @@ constexpr float kLauncherButtonH = 34.0f; // as ModLauncher_Generate makes them
 // a hidden button takes no room (a column keeps a hidden child's place)
 void ShowButton(RecompButton* b, bool shown)
 {
-    b->SetVisible(shown);
-    b->SetHeight(shown ? kLauncherButtonH : 0.0f);
+    ShowWidget(b, shown, kLauncherButtonH);
 }
 
 void LabelButton(Node* root, const char* name, const std::string& label, bool shown)
@@ -324,7 +333,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     }
     const ModStyle& s = map.mStyle;
     const ModLauncherSettings& l = map.mLauncher;
-    ModStyle_Apply(root, s); // panel, buttons, the title's size and color
+    ModStyle_Apply(root, s, false); // panel, buttons, fonts (its texts are styled below)
 
     Font* header = ModStyle_Font(s, s.mHeaderFont);
     Font* body = ModStyle_Font(s, s.mBodyFont);
@@ -333,8 +342,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
     StyleText(root, "Subtitle", body, s.mLabelSize, s.mInfoColor, &l.mSubtitle);
     if (Node* sub = root->FindChild("Subtitle", true))
     {
-        sub->SetVisible(!l.mSubtitle.empty());
-        if (Widget* w = sub->As<Widget>()) w->SetHeight(l.mSubtitle.empty() ? 0.0f : 22.0f);
+        if (Widget* w = sub->As<Widget>()) ShowWidget(w, !l.mSubtitle.empty(), 22.0f);
     }
     // the ROM and message lines fill in as the launcher runs; until then (the editor) they show
     // what a first start says, not their tokens
@@ -379,7 +387,9 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             q->SetUvScale(l.mLogoUvScale);
             q->SetUvOffset(l.mLogoUvOffset);
             q->SetObjectFit(l.mLogoFit < uint8_t(ObjectFit::Count) ? ObjectFit(l.mLogoFit) : ObjectFit::Contain);
-            q->SetDimensions(l.mLogoSize.x, l.mLogoSize.y);
+            // (a size changed in the scene stays)
+            q->SetDimensions(RecompLook::Apply(q, "width", q->GetWidth(), l.mLogoSize.x),
+                             RecompLook::Apply(q, "height", q->GetHeight(), l.mLogoSize.y));
             q->SetVisible(logo != nullptr);
         }
     }
@@ -409,7 +419,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             if (Text* t = node->As<Text>())
             {
                 t->SetFont(body);
-                t->SetTextSize(textSize);
+                t->SetTextSize(RecompLook::Apply(t, "textSize", t->GetTextSize(), textSize));
                 t->SetColor(s.mInfoColor);
                 t->SetText(l.mFooterText);
                 t->SetVerticalJustification(Justification::Center);
@@ -418,7 +428,7 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
                 if (hasText && textW <= 0.0f) textW = float(l.mFooterText.size()) * textSize * 0.55f;
                 if (hasText) textW += 2.0f;
                 t->SetAnchorMode(AnchorMode::TopLeft);
-                t->SetDimensions(textW, lineH);
+                t->SetDimensions(textW, std::max(lineH, t->GetTextSize() + 3.0f));
                 t->SetVisible(hasText);
             }
         }
@@ -448,14 +458,14 @@ void ModLauncher_ApplyLook(Node* root, const ModMap& map)
             if (RecompText* t = node->As<RecompText>())
             {
                 t->SetFont(body);
-                t->SetTextSize(textSize);
+                t->SetTextSize(RecompLook::Apply(t, "textSize", t->GetTextSize(), textSize));
                 t->SetColor(s.mInfoColor);
                 t->SetFormat(l.mVersionFormat);
                 t->SetText(RecompFormat(l.mVersionFormat));
                 t->SetHorizontalJustification(Justification::Right);
                 t->SetVerticalJustification(Justification::Center);
                 t->SetAnchorMode(AnchorMode::TopLeft);
-                t->SetDimensions(hasVersion ? 240.0f : 0.0f, lineH);
+                t->SetDimensions(hasVersion ? 240.0f : 0.0f, std::max(lineH, t->GetTextSize() + 3.0f));
                 t->SetVisible(hasVersion);
             }
         }

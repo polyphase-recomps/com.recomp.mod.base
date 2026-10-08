@@ -324,7 +324,13 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     }
     if (tabs != nullptr)
     {
-        tabs->SetWidth(float(groups.size()) * (kTabW + 4.0f));
+        // as wide as its tabs are (one may have been resized in the scene)
+        float width = 0.0f;
+        for (uint32_t i = 0; i < tabs->GetNumChildren(); ++i)
+        {
+            if (Widget* w = tabs->GetChild((int32_t)i)->As<Widget>()) width += w->GetWidth() + 4.0f;
+        }
+        tabs->SetWidth(std::max(width, kTabW));
     }
 
     // pages: each a vertical scroll list taking the panel's remaining height
@@ -353,8 +359,12 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
             }
         }
         // the list is as tall as its rows (an ArrayWidget doesn't size itself)
-        const float n = float(list->GetNumChildren());
-        list->SetHeight(std::max(kRowH, n * (kRowH + kRowGap) - kRowGap));
+        float listH = 0.0f;
+        for (uint32_t i = 0; i < list->GetNumChildren(); ++i)
+        {
+            if (Widget* w = list->GetChild((int32_t)i)->As<Widget>()) listH += (i > 0 ? kRowGap : 0.0f) + w->GetHeight();
+        }
+        list->SetHeight(std::max(kRowH, listH));
         LinkNavigation(rows);
         if (!rows.empty())
         {

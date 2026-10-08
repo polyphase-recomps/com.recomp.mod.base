@@ -19,6 +19,7 @@
  */
 #pragma once
 
+#include "ModBaseLook.h"
 #include "ModBaseWidgets.h"
 
 #include "Engine.h"
@@ -67,6 +68,7 @@ struct Builder
             return existing->As<T>();
         }
         T* node = parent->CreateChild<T>(name.c_str());
+        RecompLook::MarkNew(node);
         init(node);
         ++added;
         return node;
@@ -160,6 +162,7 @@ inline Widget* EnsureTyped(Builder& b, Node* parent, const std::string& name, co
         return nullptr;
     }
     node->SetName(name);
+    RecompLook::MarkNew(node);
     init(w);
     ++b.added;
     return w;

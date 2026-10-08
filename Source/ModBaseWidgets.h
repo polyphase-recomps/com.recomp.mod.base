@@ -57,7 +57,9 @@ struct ModStyle;
 // Restyles a settings UI tree (a generated scene's root, or a live instance of it): the
 // Panel's tint / texture, every RecompButton (state textures and colors, text, selection
 // border; tabs use the tab text size), and the Title / Label / Value / Note texts.
-MODBASE_API void ModStyle_Apply(Node* root, const ModStyle& style);
+// `namedTexts` false: the texts by name (Title, Label, Value, Note) only get the body font, their
+// sizes and colors are the caller's (the launcher's and the disclaimer's own).
+MODBASE_API void ModStyle_Apply(Node* root, const ModStyle& style, bool namedTexts = true);
 // The font of a text role (header / body / button font), else the style's font, else the engine's.
 class Font;
 class AssetRef;
@@ -95,6 +97,7 @@ public:
     // The label's size (the menu style's): a label too wide for the button is drawn smaller,
     // down to 40% of it, so it fits.
     void SetBaseTextSize(float size);
+    float GetBaseTextSize() const;
 
     // Setting mode: Direction +1 steps up / toggles / next choice / runs an action,
     // -1 steps down / previous choice.
@@ -129,6 +132,7 @@ protected:
     std::string mFitLabel;     // what FitLabel last fitted (it fits again when one changes)
     float mFitWidth = -1.0f;
     float mFitBase = -1.0f;
+    float mFitSize = -1.0f; // the size FitLabel left the label at (another one: the user's)
 };
 
 class MODBASE_API RecompBar : public ProgressBar

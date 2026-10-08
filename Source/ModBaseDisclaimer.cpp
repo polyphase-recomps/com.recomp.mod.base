@@ -4,6 +4,7 @@
  */
 
 #include "ModBaseDisclaimer.h"
+#include "ModBaseLook.h"
 
 #include "ModBaseModMap.h"
 #include "ModBaseWidgets.h"
@@ -218,8 +219,10 @@ void RecompDisclaimer::ShowPage(int index)
     {
         if (RecompButton* b = FindButton(root, name))
         {
+            // shown: the height it had (the user's, when they changed it)
+            if (b->IsVisible() && b->GetHeight() > 0.0f) RecompLook::Remember(b, "shownHeight", b->GetHeight());
             b->SetVisible(!mAccepted);
-            b->SetHeight(mAccepted ? 0.0f : kButtonH);
+            b->SetHeight(mAccepted ? 0.0f : RecompLook::Recall(b, "shownHeight", kButtonH));
         }
     }
     FitText();
@@ -458,7 +461,7 @@ void ModDisclaimer_ApplyLook(Node* root, const ModMap& map)
     }
     const ModStyle& s = map.mStyle;
     const ModDisclaimerSettings& d = map.mDisclaimer;
-    ModStyle_Apply(root, s); // panel, buttons, fonts of the buttons
+    ModStyle_Apply(root, s, false); // panel, buttons, fonts (its texts are styled below)
 
     Font* header = ModStyle_Font(s, s.mHeaderFont);
     Font* body = ModStyle_Font(s, s.mBodyFont);
@@ -466,7 +469,7 @@ void ModDisclaimer_ApplyLook(Node* root, const ModMap& map)
         if (Text* t = FindText(root, name))
         {
             t->SetFont(font);
-            t->SetTextSize(size);
+            t->SetTextSize(RecompLook::Apply(t, "textSize", t->GetTextSize(), size)); // (unless changed in the scene)
             t->SetColor(color);
         }
     };
