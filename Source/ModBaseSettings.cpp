@@ -82,6 +82,10 @@ float DisplayGet(const std::string& id)
     if (id == "display.filter") return (float)d.filter;
     if (id == "display.window") return (float)d.window;
     if (id == "display.resolution") return (float)d.resolution;
+    if (id == "display.upscaler") return (float)d.upscaler;
+    if (id == "display.sharpness") return (float)d.sharpness;
+    if (id == "display.antialias") return (float)d.antialias;
+    if (id == "display.textures") return (float)d.textures;
     return 0.0f;
 }
 
@@ -94,6 +98,10 @@ void DisplaySet(const std::string& id, float value)
     else if (id == "display.filter") d.filter = std::max(0, std::min(v, 2));
     else if (id == "display.window") d.window = std::max(0, v);
     else if (id == "display.resolution") d.resolution = std::max(1, std::min(v, 4));
+    else if (id == "display.upscaler") d.upscaler = std::max(0, std::min(v, 1));
+    else if (id == "display.sharpness") d.sharpness = std::max(0, std::min(v, 3));
+    else if (id == "display.antialias") d.antialias = std::max(0, std::min(v, 1));
+    else if (id == "display.textures") d.textures = std::max(0, std::min(v, 5));
 }
 
 bool IsDisplayId(const std::string& id)
@@ -135,6 +143,14 @@ ModSettings::ModSettings()
     resolution.mMin = 1.0f;
     resolution.mMax = 4.0f;
     mBuiltins.push_back(resolution);
+    // GPU post-processing and filtering (runtimes that can; see Recomp_SetRenderFeatures)
+    mBuiltins.push_back(MakeChoice("display.upscaler", "Upscaler", {"Off", "FSR 1"}, 0.0f));
+    mBuiltins.push_back(MakeChoice("display.sharpness", "Sharpness", {"Off", "Low", "Medium", "High"}, 0.0f));
+    mBuiltins.push_back(MakeChoice("display.antialias", "Anti-aliasing", {"Off", "SMAA"}, 0.0f));
+    mBuiltins.push_back(MakeChoice("display.textures", "Textures",
+                                   {"Original", "Trilinear", "Anisotropic 2x", "Anisotropic 4x", "Anisotropic 8x",
+                                    "Anisotropic 16x"},
+                                   0.0f));
     std::vector<std::string> windows;
     for (const RecompWindowPreset& p : Recomp_WindowPresets())
     {

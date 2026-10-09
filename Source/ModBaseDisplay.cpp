@@ -5,6 +5,8 @@
 
 #include "ModBaseDisplay.h"
 
+#include <cstring>
+
 #include "Engine.h"
 #include "Assets/Texture.h"
 #include "Nodes/Widgets/Quad.h"
@@ -36,6 +38,44 @@ void Recomp_SetMaxResolution(int maxScale)
 int Recomp_MaxResolution()
 {
     return MaxResolution();
+}
+
+namespace
+{
+uint32_t& RenderFeatures()
+{
+    static uint32_t sFeatures = 0;
+    return sFeatures;
+}
+}
+
+void Recomp_SetRenderFeatures(uint32_t features)
+{
+    RenderFeatures() |= features;
+}
+
+uint32_t Recomp_RenderFeatures()
+{
+    return RenderFeatures();
+}
+
+const std::vector<const char*>& Recomp_DisplaySettingIds()
+{
+    static const std::vector<const char*> sIds = {"display.mode",      "display.scale",     "display.filter",
+                                                  "display.resolution", "display.upscaler", "display.sharpness",
+                                                  "display.antialias",  "display.textures", "display.window"};
+    return sIds;
+}
+
+bool Recomp_DisplaySettingOffered(const char* id)
+{
+    const uint32_t f = Recomp_RenderFeatures();
+    if (std::strcmp(id, "display.resolution") == 0) return Recomp_MaxResolution() > 1;
+    if (std::strcmp(id, "display.upscaler") == 0) return (f & RecompRender_Upscaler) != 0;
+    if (std::strcmp(id, "display.sharpness") == 0) return (f & RecompRender_Sharpness) != 0;
+    if (std::strcmp(id, "display.antialias") == 0) return (f & RecompRender_AntiAlias) != 0;
+    if (std::strcmp(id, "display.textures") == 0) return (f & RecompRender_Textures) != 0;
+    return true;
 }
 
 const char* Recomp_FitModeName(RecompFitMode mode)

@@ -239,11 +239,11 @@ bool ModScene_Generate(ModMap* map, const ModSceneOptions& options, std::string&
     if (options.includeDisplay)
     {
         std::vector<const ModEntry*> display;
-        for (const char* id : {"display.mode", "display.scale", "display.filter", "display.resolution", "display.window"})
+        for (const char* id : Recomp_DisplaySettingIds())
         {
-            if (std::strcmp(id, "display.resolution") == 0 && Recomp_MaxResolution() <= 1)
+            if (!Recomp_DisplaySettingOffered(id))
             {
-                continue; // no runtime here can draw larger
+                continue; // no runtime here can do it
             }
             if (map->Find(id) == nullptr)
             {

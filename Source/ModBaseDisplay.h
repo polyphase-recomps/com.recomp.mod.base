@@ -14,6 +14,15 @@
  *
  * Filter: Auto (the runtime's own choice), Sharp (nearest) or Smooth (linear).
  *
+ * Runtimes that draw on the host's GPU may also offer (Recomp_SetRenderFeatures):
+ *   Upscaler       Off, or FSR 1: the picture upscaled to its size on screen (AMD FidelityFX
+ *                  Super Resolution 1, edge-adaptive), from the render Resolution
+ *   Sharpness      Off, Low, Medium, High (contrast-adaptive sharpening, FSR's RCAS)
+ *   Anti-aliasing  Off or SMAA (subpixel morphological anti-aliasing, 1x)
+ *   Textures       Original (the game's own sampling) or Trilinear / Anisotropic 2x-16x for
+ *                  the world's textures (mipmaps made from the full-size texture; which
+ *                  textures count is the runtime's choice)
+ *
  * "Full Screen" and window sizes per platform:
  *   Windows (packaged game): Window "Full Screen" is the engine's borderless desktop
  *     fullscreen; the other window presets size the window (1280x720, 1920x1080, ...,
@@ -55,6 +64,11 @@ struct RecompDisplaySettings
     int window = 0;         // Windows window preset, see Recomp_WindowPresets (0 = leave)
     int resolution = 1;     // render resolution: the game drawn at N x its own size (1..4), by
                             // runtimes that can (Recomp_SetMaxResolution); players clamp it
+    // GPU post-processing and filtering (runtimes that offer them: Recomp_SetRenderFeatures)
+    int upscaler = 0;       // 0 off, 1 FSR 1
+    int sharpness = 0;      // 0 off, 1 low, 2 medium, 3 high
+    int antialias = 0;      // 0 off, 1 SMAA
+    int textures = 0;       // 0 original, 1 trilinear, 2..5 anisotropic 2x, 4x, 8x, 16x
 };
 
 // "Resolution" (display.resolution) is offered by runtimes that can draw the game larger than
@@ -63,6 +77,23 @@ struct RecompDisplaySettings
 #define RECOMP_DISPLAY_HAS_RESOLUTION 1
 MODBASE_API void Recomp_SetMaxResolution(int maxScale);
 MODBASE_API int Recomp_MaxResolution(); // 1 until a runtime sets more
+
+// "Upscaler", "Sharpness", "Anti-aliasing" and "Textures" (display.upscaler / sharpness /
+// antialias / textures) are offered when a runtime declares it can do them, when it loads.
+#define RECOMP_DISPLAY_HAS_RENDER_FEATURES 1
+enum RecompRenderFeature : uint32_t
+{
+    RecompRender_Upscaler = 1u << 0,
+    RecompRender_Sharpness = 1u << 1,
+    RecompRender_AntiAlias = 1u << 2,
+    RecompRender_Textures = 1u << 3,
+};
+MODBASE_API void Recomp_SetRenderFeatures(uint32_t features); // adds to what is offered
+MODBASE_API uint32_t Recomp_RenderFeatures();
+// Whether the settings scene / editor should list this display setting id here.
+MODBASE_API bool Recomp_DisplaySettingOffered(const char* id);
+// Every display setting id, in the order the settings list them.
+MODBASE_API const std::vector<const char*>& Recomp_DisplaySettingIds();
 
 struct RecompRect
 {
